@@ -40,6 +40,8 @@ void main() {
       // 模拟到达 B 点 (无停顿)
       controller.onPositionChanged(const Duration(seconds: 3, milliseconds: 50));
       expect(seekTarget, const Duration(seconds: 1));
+      expect(pauseCalled, isFalse);
+      expect(resumeCalled, isFalse);
     });
 
     test('步进微调 A 点与 B 点', () {

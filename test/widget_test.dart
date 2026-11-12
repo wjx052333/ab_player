@@ -46,4 +46,28 @@ void main() {
     // 确保绝对没有任何 RenderFlex 溢出
     expect(overflowDetails, isNull);
   });
+
+  testWidgets('App allows switching between Player and Dictionary tabs', (tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(const AudacityPlayerApp());
+    await tester.pump();
+
+    expect(find.text('🎧 播放器'), findsOneWidget);
+    expect(find.text('📖 词典'), findsOneWidget);
+
+    // Switch to dictionary tab
+    await tester.tap(find.text('📖 词典'));
+    await tester.pump();
+
+    expect(find.textContaining('输入英文查词'), findsOneWidget);
+
+    // Switch back to player tab
+    await tester.tap(find.text('🎧 播放器'));
+    await tester.pump();
+
+    expect(find.text('打开音频'), findsOneWidget);
+  });
 }

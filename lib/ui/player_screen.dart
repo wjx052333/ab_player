@@ -4,11 +4,14 @@ import '../controllers/ab_repeat_controller.dart';
 import '../models/audio_track.dart';
 import '../models/waveform_gesture_mode.dart';
 import '../services/audio_player_service.dart';
+import '../services/dictionary_audio_service.dart';
+import '../services/dictionary_db_service.dart';
 import '../services/waveform_extractor.dart';
 import 'audacity_theme.dart';
 import 'controls/ab_control_bar.dart';
 import 'controls/player_bottom_bar.dart';
 import 'controls/study_tuning_bar.dart';
+import 'dictionary/dictionary_screen.dart';
 import 'waveform/audacity_waveform_view.dart';
 import 'waveform/time_ruler_helper.dart';
 
@@ -22,8 +25,11 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> {
   final AudioPlayerService _playerService = AudioPlayerService();
   final WaveformExtractor _waveformExtractor = WaveformExtractor();
+  final DictionaryDbService _dictDbService = DictionaryDbService();
+  final DictionaryAudioService _dictAudioService = DictionaryAudioService();
   late final AbRepeatController _repeatController;
 
+  int _selectedTabIndex = 0; // 0: Player, 1: Dictionary
   AudioTrack _track = AudioTrack.empty();
   Duration _currentPos = Duration.zero;
   bool _isPlaying = false;
@@ -86,7 +92,188 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void dispose() {
     _playerService.dispose();
     _repeatController.dispose();
+    _dictDbService.dispose();
+    _dictAudioService.dispose();
     super.dispose();
+  }
+
+  Widget _buildTopTabBar() {
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      color: const Color(0xFF101010),
+      child: Row(
+        children: [
+          // Tab switcher buttons
+          _buildTabButton(index: 0, title: '🎧 播放器'),
+          const SizedBox(width: 8),
+          _buildTabButton(index: 1, title: '📖 词典'),
+          const SizedBox(width: 14),
+          const VerticalDivider(color: Color(0xFF2C2C2C), width: 1, indent: 6, endIndent: 6),
+          const SizedBox(width: 12),
+          // Tab specific quick actions
+          if (_selectedTabIndex == 0) ...[
+            InkWell(
+              onTap: _pickAudioFile,
+              child: const Row(
+                children: [
+                  Icon(Icons.folder_open, size: 16, color: Color(0xFF3AAFA9)),
+                  SizedBox(width: 4),
+                  Text('打开音频', style: TextStyle(color: Color(0xFF3AAFA9), fontSize: 12)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _track.title,
+                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Text(
+              '${TimeRulerHelper.formatTime(_currentPos)} / ${TimeRulerHelper.formatTime(_track.duration)}',
+              style: const TextStyle(color: Colors.white60, fontSize: 11, fontFamily: 'monospace'),
+            ),
+          ] else ...[
+            Expanded(
+              child: Text(
+                _dictDbService.isReady
+                    ? '查词引擎: 已连接 ecdict-ultimate.db + 权威例句库'
+                    : '查词引擎: 准备就绪',
+                style: const TextStyle(color: Colors.white60, fontSize: 11),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (_isPlaying) ...[
+              const Icon(Icons.volume_up, size: 14, color: Color(0xFF3AAFA9)),
+              const SizedBox(width: 4),
+              Text(
+                '音频后台播放中 (${TimeRulerHelper.formatTime(_currentPos)})',
+                style: const TextStyle(color: Color(0xFF3AAFA9), fontSize: 11),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabButton({required int index, required String title}) {
+    final isSelected = _selectedTabIndex == index;
+    return InkWell(
+      onTap: () => setState(() => _selectedTabIndex = index),
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF263238) : Colors.transparent,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF3AAFA9) : const Color(0xFF333333),
+          ),
+        ),
+        child: Text(
+          title,
+          style: TextStyle(
+            color: isSelected ? const Color(0xFF3AAFA9) : Colors.white70,
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlayerBody() {
+    return Column(
+      children: [
+        // 上半部分：全宽波形与时间标尺视口
+        Expanded(
+          flex: 52,
+          child: Container(
+            decoration: const BoxDecoration(
+              border: Border(
+                top: BorderSide(color: Color(0xFF262626), width: 1),
+                bottom: BorderSide(color: Color(0xFF333333), width: 1.5),
+              ),
+            ),
+            child: AudacityWaveformView(
+              peaks: _track.peaks,
+              totalDuration: _track.duration,
+              currentPosition: _currentPos,
+              repeatState: _repeatController.state,
+              isPlaying: _isPlaying,
+              gestureMode: _gestureMode,
+              onSeek: (pos) => _playerService.seek(pos),
+              onRangeSelected: (p1, p2) => _repeatController.setSelectionRange(p1, p2),
+              onPointAMoved: (pos) => _repeatController.markPointA(pos),
+              onPointBMoved: (pos) => _repeatController.markPointB(pos),
+            ),
+          ),
+        ),
+        // 下半部分：左右分栏控制区
+        Expanded(
+          flex: 48,
+          child: Container(
+            color: AudacityTheme.panelBackground,
+            child: Row(
+              children: [
+                // 左侧列：手势切换 + A-B 控制与微调
+                Expanded(
+                  flex: 48,
+                  child: AbControlBar(
+                    state: _repeatController.state,
+                    currentPosition: _currentPos,
+                    gestureMode: _gestureMode,
+                    onGestureModeChanged: (mode) => setState(() => _gestureMode = mode),
+                    onSetA: () => _repeatController.markPointA(_currentPos),
+                    onSetB: () => _repeatController.markPointB(_currentPos),
+                    onClear: () => _repeatController.clearSelection(),
+                    onNudgeA: (ms) => _repeatController.nudgeA(ms),
+                    onNudgeB: (ms) => _repeatController.nudgeB(ms),
+                  ),
+                ),
+                // 右侧列：精听参数调节 + 底部播放控制
+                Expanded(
+                  flex: 52,
+                  child: SingleChildScrollView(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          StudyTuningBar(
+                            currentSpeed: _repeatController.state.playbackSpeed,
+                            currentPauseSeconds: _repeatController.state.pauseSeconds,
+                            remainingLoops: _repeatController.state.remainingLoops,
+                            onSpeedChanged: (speed) {
+                              _repeatController.setPlaybackSpeed(speed);
+                              _playerService.setSpeed(speed);
+                            },
+                            onPauseChanged: (pause) => _repeatController.setPauseSeconds(pause),
+                            onLoopsChanged: (loops) => _repeatController.setRemainingLoops(loops),
+                          ),
+                          PlayerBottomBar(
+                            isPlaying: _isPlaying,
+                            currentPosition: _currentPos,
+                            totalDuration: _track.duration,
+                            onPlayPause: () => _isPlaying ? _playerService.pause() : _playerService.play(),
+                            onSeekBack5s: () => _playerService.seek(_currentPos - const Duration(seconds: 5)),
+                            onSeekForward5s: () => _playerService.seek(_currentPos + const Duration(seconds: 5)),
+                            onSeek: (pos) => _playerService.seek(pos),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -98,123 +285,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ? const Center(child: CircularProgressIndicator(color: Color(0xFF3AAFA9)))
             : Column(
                 children: [
-                  // 1. 顶部紧凑标题与信息栏 (高度 32dp)
-                  Container(
-                    height: 32,
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    color: const Color(0xFF101010),
-                    child: Row(
+                  // 1. 顶部紧凑标题与标签切换栏 (高度 32dp)
+                  _buildTopTabBar(),
+
+                  // 2. 主体工作区 (保持播放器状态存活)
+                  Expanded(
+                    child: IndexedStack(
+                      index: _selectedTabIndex,
                       children: [
-                        InkWell(
-                          onTap: _pickAudioFile,
-                          child: const Row(
-                            children: [
-                              Icon(Icons.folder_open, size: 16, color: Color(0xFF3AAFA9)),
-                              SizedBox(width: 4),
-                              Text('打开音频', style: TextStyle(color: Color(0xFF3AAFA9), fontSize: 12)),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _track.title,
-                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Text(
-                          '${TimeRulerHelper.formatTime(_currentPos)} / ${TimeRulerHelper.formatTime(_track.duration)}',
-                          style: const TextStyle(color: Colors.white60, fontSize: 11, fontFamily: 'monospace'),
+                        _buildPlayerBody(),
+                        DictionaryScreen(
+                          dbService: _dictDbService,
+                          audioService: _dictAudioService,
                         ),
                       ],
-                    ),
-                  ),
-
-                  // 2. 上半部分：全宽波形与时间标尺视口 (带有金属内嵌边框感)
-                  Expanded(
-                    flex: 52,
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        border: Border(
-                          top: BorderSide(color: Color(0xFF262626), width: 1),
-                          bottom: BorderSide(color: Color(0xFF333333), width: 1.5),
-                        ),
-                      ),
-                      child: AudacityWaveformView(
-                        peaks: _track.peaks,
-                        totalDuration: _track.duration,
-                        currentPosition: _currentPos,
-                        repeatState: _repeatController.state,
-                        isPlaying: _isPlaying,
-                        gestureMode: _gestureMode,
-                        onSeek: (pos) => _playerService.seek(pos),
-                        onRangeSelected: (p1, p2) => _repeatController.setSelectionRange(p1, p2),
-                        onPointAMoved: (pos) => _repeatController.markPointA(pos),
-                        onPointBMoved: (pos) => _repeatController.markPointB(pos),
-                      ),
-                    ),
-                  ),
-
-                  // 3. 下半部分：左右分栏控制区 (金属灰色底板，与暗黑示波器屏幕鲜明区分)
-                  Expanded(
-                    flex: 48,
-                    child: Container(
-                      color: AudacityTheme.panelBackground,
-                      child: Row(
-                        children: [
-                          // 左侧列：手势切换 + A-B 控制与微调
-                          Expanded(
-                            flex: 48,
-                            child: AbControlBar(
-                              state: _repeatController.state,
-                              currentPosition: _currentPos,
-                              gestureMode: _gestureMode,
-                              onGestureModeChanged: (mode) => setState(() => _gestureMode = mode),
-                              onSetA: () => _repeatController.markPointA(_currentPos),
-                              onSetB: () => _repeatController.markPointB(_currentPos),
-                              onClear: () => _repeatController.clearSelection(),
-                              onNudgeA: (ms) => _repeatController.nudgeA(ms),
-                              onNudgeB: (ms) => _repeatController.nudgeB(ms),
-                            ),
-                          ),
-
-                          // 右侧列：精听参数调节 + 底部播放控制
-                          Expanded(
-                            flex: 52,
-                            child: SingleChildScrollView(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    StudyTuningBar(
-                                      currentSpeed: _repeatController.state.playbackSpeed,
-                                      currentPauseSeconds: _repeatController.state.pauseSeconds,
-                                      remainingLoops: _repeatController.state.remainingLoops,
-                                      onSpeedChanged: (speed) {
-                                        _repeatController.setPlaybackSpeed(speed);
-                                        _playerService.setSpeed(speed);
-                                      },
-                                      onPauseChanged: (pause) => _repeatController.setPauseSeconds(pause),
-                                      onLoopsChanged: (loops) => _repeatController.setRemainingLoops(loops),
-                                    ),
-                                    PlayerBottomBar(
-                                      isPlaying: _isPlaying,
-                                      currentPosition: _currentPos,
-                                      totalDuration: _track.duration,
-                                      onPlayPause: () => _isPlaying ? _playerService.pause() : _playerService.play(),
-                                      onSeekBack5s: () => _playerService.seek(_currentPos - const Duration(seconds: 5)),
-                                      onSeekForward5s: () => _playerService.seek(_currentPos + const Duration(seconds: 5)),
-                                      onSeek: (pos) => _playerService.seek(pos),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                   ),
                 ],

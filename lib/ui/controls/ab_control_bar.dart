@@ -28,7 +28,7 @@ class AbControlBar extends StatelessWidget {
     final bText = state.pointB != null ? TimeRulerHelper.formatTime(state.pointB!) : '--:--.-';
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: const BoxDecoration(
         color: Color(0xFF242424),
         border: Border(right: BorderSide(color: Color(0xFF383838), width: 1)),
@@ -36,20 +36,34 @@ class AbControlBar extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _compactButton(Icons.flag, '设A点', Colors.amber, onSetA),
-              _compactButton(Icons.outlined_flag, '设B点', Colors.orange, onSetB),
-              _compactButton(Icons.close, '清除', Colors.redAccent, (state.pointA != null || state.pointB != null) ? onClear : null),
-            ],
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _compactButton(Icons.flag, '设A点', Colors.amber, onSetA),
+                const SizedBox(width: 6),
+                _compactButton(Icons.outlined_flag, '设B点', Colors.orange, onSetB),
+                const SizedBox(width: 6),
+                _compactButton(
+                  Icons.close,
+                  '清除',
+                  Colors.redAccent,
+                  (state.pointA != null || state.pointB != null) ? onClear : null,
+                ),
+              ],
+            ),
           ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _nudgeRow('A', aText, () => onNudgeA(-100), () => onNudgeA(100)),
-              _nudgeRow('B', bText, () => onNudgeB(-100), () => onNudgeB(100)),
-            ],
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _nudgeGroup('A', aText, () => onNudgeA(-100), () => onNudgeA(100)),
+                const SizedBox(width: 10),
+                _nudgeGroup('B', bText, () => onNudgeB(-100), () => onNudgeB(100)),
+              ],
+            ),
           ),
         ],
       ),
@@ -58,12 +72,12 @@ class AbControlBar extends StatelessWidget {
 
   Widget _compactButton(IconData icon, String label, Color color, VoidCallback? onPressed) {
     return ElevatedButton.icon(
-      icon: Icon(icon, size: 14, color: color),
-      label: Text(label, style: const TextStyle(fontSize: 12)),
+      icon: Icon(icon, size: 13, color: color),
+      label: Text(label, style: const TextStyle(fontSize: 11)),
       style: ElevatedButton.styleFrom(
         backgroundColor: const Color(0xFF333333),
         foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         minimumSize: Size.zero,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
@@ -71,12 +85,15 @@ class AbControlBar extends StatelessWidget {
     );
   }
 
-  Widget _nudgeRow(String label, String timeStr, VoidCallback onMinus, VoidCallback onPlus) {
+  Widget _nudgeGroup(String label, String timeStr, VoidCallback onMinus, VoidCallback onPlus) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('$label:$timeStr', style: const TextStyle(color: Colors.white70, fontSize: 11, fontFamily: 'monospace')),
-        const SizedBox(width: 2),
+        Text(
+          '$label:$timeStr',
+          style: const TextStyle(color: Colors.white70, fontSize: 11, fontFamily: 'monospace'),
+        ),
+        const SizedBox(width: 3),
         InkWell(
           onTap: onMinus,
           child: Container(
@@ -85,7 +102,7 @@ class AbControlBar extends StatelessWidget {
             child: const Text('-0.1s', style: TextStyle(color: Colors.white60, fontSize: 10)),
           ),
         ),
-        const SizedBox(width: 2),
+        const SizedBox(width: 3),
         InkWell(
           onTap: onPlus,
           child: Container(

@@ -173,9 +173,9 @@ class DictionaryDbService {
   }
 
   void dispose() {
-    _ecdictDb?.dispose();
+    _ecdictDb?.close();
     _ecdictDb = null;
-    _extraDb?.dispose();
+    _extraDb?.close();
     _extraDb = null;
   }
 }

@@ -160,14 +160,18 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
                   // Right word card (65%)
                   Expanded(
                     flex: 65,
-                    child: _currentDetail == null
+                    child: _isLoading
                         ? const Center(
-                            child: Text(
-                              '请在左侧搜索或选择单词查看详情',
-                              style: TextStyle(color: Colors.white38, fontSize: 13),
-                            ),
+                            child: CircularProgressIndicator(color: Color(0xFF3AAFA9)),
                           )
-                        : Column(
+                        : _currentDetail == null
+                            ? const Center(
+                                child: Text(
+                                  '请在左侧搜索或选择单词查看详情',
+                                  style: TextStyle(color: Colors.white38, fontSize: 13),
+                                ),
+                              )
+                            : Column(
                             children: [
                               // Top header
                               DictCardHeader(

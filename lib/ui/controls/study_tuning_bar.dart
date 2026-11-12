@@ -22,42 +22,49 @@ class StudyTuningBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('倍速: ', style: TextStyle(color: Colors.white54, fontSize: 12)),
+          const Text('速: ', style: TextStyle(color: Colors.white54, fontSize: 11)),
           for (final speed in [0.8, 1.0, 1.25, 1.5])
             Padding(
-              padding: const EdgeInsets.only(right: 4),
+              padding: const EdgeInsets.only(right: 3),
               child: ChoiceChip(
-                label: Text('${speed}x', style: const TextStyle(fontSize: 11)),
+                label: Text('${speed}x', style: const TextStyle(fontSize: 10)),
                 selected: currentSpeed == speed,
                 onSelected: (_) => onSpeedChanged(speed),
                 visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                labelPadding: const EdgeInsets.symmetric(horizontal: 4),
               ),
             ),
-          const SizedBox(width: 12),
-          const Text('停顿: ', style: TextStyle(color: Colors.white54, fontSize: 12)),
+          const SizedBox(width: 6),
+          const Text('停: ', style: TextStyle(color: Colors.white54, fontSize: 11)),
           for (final pause in [0, 1, 2, 3])
             Padding(
-              padding: const EdgeInsets.only(right: 4),
+              padding: const EdgeInsets.only(right: 3),
               child: ChoiceChip(
-                label: Text('${pause}s', style: const TextStyle(fontSize: 11)),
+                label: Text('${pause}s', style: const TextStyle(fontSize: 10)),
                 selected: currentPauseSeconds == pause,
                 onSelected: (_) => onPauseChanged(pause),
                 visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                labelPadding: const EdgeInsets.symmetric(horizontal: 4),
               ),
             ),
-          const SizedBox(width: 12),
-          const Text('循环: ', style: TextStyle(color: Colors.white54, fontSize: 12)),
+          const SizedBox(width: 6),
+          const Text('循环: ', style: TextStyle(color: Colors.white54, fontSize: 11)),
           for (final loops in [-1, 3, 5])
             Padding(
-              padding: const EdgeInsets.only(right: 4),
+              padding: const EdgeInsets.only(right: 3),
               child: ChoiceChip(
-                label: Text(loops == -1 ? '无限' : '$loops次', style: const TextStyle(fontSize: 11)),
+                label: Text(loops == -1 ? '∞' : '$loops次', style: const TextStyle(fontSize: 10)),
                 selected: remainingLoops == loops,
                 onSelected: (_) => onLoopsChanged(loops),
                 visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                labelPadding: const EdgeInsets.symmetric(horizontal: 4),
               ),
             ),
         ],

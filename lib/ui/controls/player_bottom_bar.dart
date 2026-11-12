@@ -26,19 +26,20 @@ class PlayerBottomBar extends StatelessWidget {
     final maxMs = totalDuration.inMilliseconds > 0 ? totalDuration.inMilliseconds.toDouble() : 1.0;
     final currMs = currentPosition.inMilliseconds.toDouble().clamp(0.0, maxMs);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: const Color(0xFF1E1E1E),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              Text(TimeRulerHelper.formatTime(currentPosition), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              Text(TimeRulerHelper.formatTime(currentPosition), style: const TextStyle(color: Colors.white70, fontSize: 10)),
               Expanded(
                 child: SliderTheme(
                   data: SliderTheme.of(context).copyWith(
-                    trackHeight: 3,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    trackHeight: 2,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
                   ),
                   child: Slider(
                     value: currMs,
@@ -48,25 +49,29 @@ class PlayerBottomBar extends StatelessWidget {
                   ),
                 ),
               ),
-              Text(TimeRulerHelper.formatTime(totalDuration), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              Text(TimeRulerHelper.formatTime(totalDuration), style: const TextStyle(color: Colors.white70, fontSize: 10)),
             ],
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               IconButton(
-                icon: const Icon(Icons.replay_5, color: Colors.white70, size: 28),
+                icon: const Icon(Icons.replay_5, color: Colors.white70, size: 22),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                 onPressed: onSeekBack5s,
               ),
-              const SizedBox(width: 24),
-              FloatingActionButton(
+              const SizedBox(width: 16),
+              FloatingActionButton.small(
                 onPressed: onPlayPause,
                 backgroundColor: const Color(0xFF3AAFA9),
-                child: Icon(isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 32),
+                child: Icon(isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 22),
               ),
-              const SizedBox(width: 24),
+              const SizedBox(width: 16),
               IconButton(
-                icon: const Icon(Icons.forward_5, color: Colors.white70, size: 28),
+                icon: const Icon(Icons.forward_5, color: Colors.white70, size: 22),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                 onPressed: onSeekForward5s,
               ),
             ],

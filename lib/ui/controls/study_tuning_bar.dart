@@ -22,7 +22,7 @@ class StudyTuningBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -35,6 +35,7 @@ class StudyTuningBar extends StatelessWidget {
                 selected: currentSpeed == speed,
                 onSelected: (_) => onSpeedChanged(speed),
                 visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 padding: EdgeInsets.zero,
                 labelPadding: const EdgeInsets.symmetric(horizontal: 4),
               ),
@@ -49,6 +50,7 @@ class StudyTuningBar extends StatelessWidget {
                 selected: currentPauseSeconds == pause,
                 onSelected: (_) => onPauseChanged(pause),
                 visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 padding: EdgeInsets.zero,
                 labelPadding: const EdgeInsets.symmetric(horizontal: 4),
               ),
@@ -63,6 +65,7 @@ class StudyTuningBar extends StatelessWidget {
                 selected: remainingLoops == loops,
                 onSelected: (_) => onLoopsChanged(loops),
                 visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 padding: EdgeInsets.zero,
                 labelPadding: const EdgeInsets.symmetric(horizontal: 4),
               ),

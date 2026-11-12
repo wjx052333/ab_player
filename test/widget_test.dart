@@ -13,13 +13,15 @@ void main() {
       originalOnError?.call(details);
     };
 
-    // 测试极限小屏横屏设备 (例如 640 x 360)
+    // 测试极限小屏横屏设备 (例如 640 x 360，且包含底部虚拟按键边距 48dp)
     tester.view.physicalSize = const Size(640, 360);
+    tester.view.padding = const FakeViewPadding(bottom: 48.0);
     tester.view.devicePixelRatio = 1.0;
 
     addTearDown(() {
       FlutterError.onError = originalOnError;
       tester.view.resetPhysicalSize();
+      tester.view.resetPadding();
       tester.view.resetDevicePixelRatio();
     });
 

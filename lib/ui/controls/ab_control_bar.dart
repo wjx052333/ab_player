@@ -33,39 +33,44 @@ class AbControlBar extends StatelessWidget {
         color: Color(0xFF242424),
         border: Border(right: BorderSide(color: Color(0xFF383838), width: 1)),
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _compactButton(Icons.flag, '设A点', Colors.amber, onSetA),
-                const SizedBox(width: 6),
-                _compactButton(Icons.outlined_flag, '设B点', Colors.orange, onSetB),
-                const SizedBox(width: 6),
-                _compactButton(
-                  Icons.close,
-                  '清除',
-                  Colors.redAccent,
-                  (state.pointA != null || state.pointB != null) ? onClear : null,
+      child: Center(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _compactButton(Icons.flag, '设A点', Colors.amber, onSetA),
+                    const SizedBox(width: 6),
+                    _compactButton(Icons.outlined_flag, '设B点', Colors.orange, onSetB),
+                    const SizedBox(width: 6),
+                    _compactButton(
+                      Icons.close,
+                      '清除',
+                      Colors.redAccent,
+                      (state.pointA != null || state.pointB != null) ? onClear : null,
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 6),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _nudgeGroup('A', aText, () => onNudgeA(-100), () => onNudgeA(100)),
+                    const SizedBox(width: 10),
+                    _nudgeGroup('B', bText, () => onNudgeB(-100), () => onNudgeB(100)),
+                  ],
+                ),
+              ),
+            ],
           ),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _nudgeGroup('A', aText, () => onNudgeA(-100), () => onNudgeA(100)),
-                const SizedBox(width: 10),
-                _nudgeGroup('B', bText, () => onNudgeB(-100), () => onNudgeB(100)),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

@@ -95,10 +95,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ? const Center(child: CircularProgressIndicator(color: Color(0xFF3AAFA9)))
             : Column(
                 children: [
-                  // 1. 顶部紧凑标题与信息栏 (高度约 34dp)
+                  // 1. 顶部紧凑标题与信息栏 (高度 32dp)
                   Container(
-                    height: 34,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    height: 32,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
                     color: const Color(0xFF181818),
                     child: Row(
                       children: [
@@ -106,31 +106,31 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           onTap: _pickAudioFile,
                           child: const Row(
                             children: [
-                              Icon(Icons.folder_open, size: 18, color: Color(0xFF3AAFA9)),
-                              SizedBox(width: 6),
-                              Text('打开音频', style: TextStyle(color: Color(0xFF3AAFA9), fontSize: 13)),
+                              Icon(Icons.folder_open, size: 16, color: Color(0xFF3AAFA9)),
+                              SizedBox(width: 4),
+                              Text('打开音频', style: TextStyle(color: Color(0xFF3AAFA9), fontSize: 12)),
                             ],
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Text(
                             _track.title,
-                            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         Text(
                           '${TimeRulerHelper.formatTime(_currentPos)} / ${TimeRulerHelper.formatTime(_track.duration)}',
-                          style: const TextStyle(color: Colors.white60, fontSize: 12, fontFamily: 'monospace'),
+                          style: const TextStyle(color: Colors.white60, fontSize: 11, fontFamily: 'monospace'),
                         ),
                       ],
                     ),
                   ),
 
-                  // 2. 上半部分：全宽波形与时间标尺视口 (占 58% 高度)
+                  // 2. 上半部分：全宽波形与时间标尺视口
                   Expanded(
-                    flex: 58,
+                    flex: 52,
                     child: AudacityWaveformView(
                       peaks: _track.peaks,
                       totalDuration: _track.duration,
@@ -143,9 +143,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     ),
                   ),
 
-                  // 3. 下半部分：左右分栏控制区 (占 42% 高度)
+                  // 3. 下半部分：左右分栏控制区
                   Expanded(
-                    flex: 42,
+                    flex: 48,
                     child: Container(
                       color: const Color(0xFF222222),
                       child: Row(
@@ -164,35 +164,37 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                           ),
 
-                          // 右侧列：精听参数调节 + 底部播放控制
+                          // 右侧列：精听参数调节 + 底部播放控制 (防极端小高度溢出，外层包 SingleChildScrollView)
                           Expanded(
                             flex: 54,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  StudyTuningBar(
-                                    currentSpeed: _repeatController.state.playbackSpeed,
-                                    currentPauseSeconds: _repeatController.state.pauseSeconds,
-                                    remainingLoops: _repeatController.state.remainingLoops,
-                                    onSpeedChanged: (speed) {
-                                      _repeatController.setPlaybackSpeed(speed);
-                                      _playerService.setSpeed(speed);
-                                    },
-                                    onPauseChanged: (pause) => _repeatController.setPauseSeconds(pause),
-                                    onLoopsChanged: (loops) => _repeatController.setRemainingLoops(loops),
-                                  ),
-                                  PlayerBottomBar(
-                                    isPlaying: _isPlaying,
-                                    currentPosition: _currentPos,
-                                    totalDuration: _track.duration,
-                                    onPlayPause: () => _isPlaying ? _playerService.pause() : _playerService.play(),
-                                    onSeekBack5s: () => _playerService.seek(_currentPos - const Duration(seconds: 5)),
-                                    onSeekForward5s: () => _playerService.seek(_currentPos + const Duration(seconds: 5)),
-                                    onSeek: (pos) => _playerService.seek(pos),
-                                  ),
-                                ],
+                            child: SingleChildScrollView(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    StudyTuningBar(
+                                      currentSpeed: _repeatController.state.playbackSpeed,
+                                      currentPauseSeconds: _repeatController.state.pauseSeconds,
+                                      remainingLoops: _repeatController.state.remainingLoops,
+                                      onSpeedChanged: (speed) {
+                                        _repeatController.setPlaybackSpeed(speed);
+                                        _playerService.setSpeed(speed);
+                                      },
+                                      onPauseChanged: (pause) => _repeatController.setPauseSeconds(pause),
+                                      onLoopsChanged: (loops) => _repeatController.setRemainingLoops(loops),
+                                    ),
+                                    PlayerBottomBar(
+                                      isPlaying: _isPlaying,
+                                      currentPosition: _currentPos,
+                                      totalDuration: _track.duration,
+                                      onPlayPause: () => _isPlaying ? _playerService.pause() : _playerService.play(),
+                                      onSeekBack5s: () => _playerService.seek(_currentPos - const Duration(seconds: 5)),
+                                      onSeekForward5s: () => _playerService.seek(_currentPos + const Duration(seconds: 5)),
+                                      onSeek: (pos) => _playerService.seek(pos),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),

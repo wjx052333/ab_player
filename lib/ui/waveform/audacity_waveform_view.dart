@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../models/repeat_state.dart';
+import '../../models/waveform_gesture_mode.dart';
 import 'audacity_waveform_painter.dart';
 
 class AudacityWaveformView extends StatefulWidget {
@@ -8,6 +10,8 @@ class AudacityWaveformView extends StatefulWidget {
   final Duration totalDuration;
   final Duration currentPosition;
   final RepeatState repeatState;
+  final bool isPlaying;
+  final WaveformGestureMode gestureMode;
   final Function(Duration) onSeek;
   final Function(Duration, Duration) onRangeSelected;
   final Function(Duration) onPointAMoved;
@@ -19,6 +23,8 @@ class AudacityWaveformView extends StatefulWidget {
     required this.totalDuration,
     required this.currentPosition,
     required this.repeatState,
+    required this.isPlaying,
+    required this.gestureMode,
     required this.onSeek,
     required this.onRangeSelected,
     required this.onPointAMoved,
@@ -30,11 +36,38 @@ class AudacityWaveformView extends StatefulWidget {
 }
 
 class _AudacityWaveformViewState extends State<AudacityWaveformView> {
-  double _pixelsPerSecond = 50.0; // 默认缩放级别
+  double _pixelsPerSecond = 50.0;
   double _scrollOffset = 0.0;
 
   double? _dragStartX;
+  double? _dragStartScrollOffset;
   int? _activeHandle; // 1: A, 2: B
+
+  bool _isUserInteracting = false;
+  Timer? _interactionCooldownTimer;
+
+  @override
+  void didUpdateWidget(covariant AudacityWaveformView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // 播放中且用户未在触控交互时，波形居中跟随播放指针
+    if (widget.isPlaying && !_isUserInteracting) {
+      _centerPlayhead();
+    }
+  }
+
+  void _centerPlayhead({double? viewportWidth}) {
+    final width = viewportWidth ?? (context.findRenderObject() as RenderBox?)?.size.width ?? 0;
+    if (width <= 0) return;
+
+    final currentSec = widget.currentPosition.inMilliseconds / 1000.0;
+    final playheadX = currentSec * _pixelsPerSecond;
+    final targetScroll = playheadX - (width / 2);
+
+    setState(() {
+      _scrollOffset = targetScroll.clamp(0.0, _maxScroll(width));
+    });
+  }
 
   Duration _xToDuration(double x, double width) {
     final clampedX = (x + _scrollOffset).clamp(0.0, _maxScroll(width) + width);
@@ -45,6 +78,12 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
   double _maxScroll(double width) {
     final totalWidth = (widget.totalDuration.inMilliseconds / 1000.0) * _pixelsPerSecond;
     return max(0.0, totalWidth - width);
+  }
+
+  @override
+  void dispose() {
+    _interactionCooldownTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -59,8 +98,15 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
               onTapUp: (details) {
                 final target = _xToDuration(details.localPosition.dx, width);
                 widget.onSeek(target);
+                // 点击跳转后立即恢复居中
+                _isUserInteracting = false;
+                _interactionCooldownTimer?.cancel();
+                _centerPlayhead(viewportWidth: width);
               },
               onScaleStart: (details) {
+                _isUserInteracting = true;
+                _interactionCooldownTimer?.cancel();
+
                 final localX = details.localFocalPoint.dx;
                 // 检测是否命中 A 或 B 把手 (热区 36px)
                 if (widget.repeatState.pointA != null) {
@@ -78,9 +124,10 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
                   }
                 }
                 _dragStartX = localX;
+                _dragStartScrollOffset = _scrollOffset;
               },
               onScaleUpdate: (details) {
-                // 1. 如果在拖动手柄
+                // 1. 如果在拖动手柄 (A/B 把手微调优先级最高)
                 if (_activeHandle == 1) {
                   final pos = _xToDuration(details.localFocalPoint.dx, width);
                   widget.onPointAMoved(pos);
@@ -91,7 +138,7 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
                   return;
                 }
 
-                // 2. 双指缩放
+                // 2. 双指捏合缩放
                 if (details.scale != 1.0) {
                   setState(() {
                     _pixelsPerSecond = (_pixelsPerSecond * details.scale).clamp(10.0, 300.0);
@@ -100,14 +147,24 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
                   return;
                 }
 
-                // 3. 拖拽滚动 / 选区
+                // 3. 单指操作：根据当前手势模式分流
                 if (details.pointerCount == 1 && _dragStartX != null) {
                   final currentX = details.localFocalPoint.dx;
-                  final p1 = _xToDuration(_dragStartX!, width);
-                  final p2 = _xToDuration(currentX, width);
-                  widget.onRangeSelected(p1, p2);
+
+                  if (widget.gestureMode.isDrag) {
+                    // ✋ 拖动模式：平移波形
+                    final deltaX = currentX - _dragStartX!;
+                    setState(() {
+                      _scrollOffset = ((_dragStartScrollOffset ?? _scrollOffset) - deltaX).clamp(0.0, _maxScroll(width));
+                    });
+                  } else {
+                    // ✂️ 划选模式：拉出 A-B 选区
+                    final p1 = _xToDuration(_dragStartX!, width);
+                    final p2 = _xToDuration(currentX, width);
+                    widget.onRangeSelected(p1, p2);
+                  }
                 } else if (details.pointerCount == 2) {
-                  // 双指平移
+                  // 双指拖拽平移
                   setState(() {
                     _scrollOffset = (_scrollOffset - details.focalPointDelta.dx).clamp(0.0, _maxScroll(width));
                   });
@@ -115,7 +172,19 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
               },
               onScaleEnd: (details) {
                 _dragStartX = null;
+                _dragStartScrollOffset = null;
                 _activeHandle = null;
+
+                // 松手 1.5 秒后平滑恢复播放居中跟随
+                _interactionCooldownTimer?.cancel();
+                _interactionCooldownTimer = Timer(const Duration(milliseconds: 1500), () {
+                  if (mounted) {
+                    _isUserInteracting = false;
+                    if (widget.isPlaying) {
+                      _centerPlayhead(viewportWidth: width);
+                    }
+                  }
+                });
               },
               child: CustomPaint(
                 size: Size(width, constraints.maxHeight),

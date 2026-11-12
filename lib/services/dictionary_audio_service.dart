@@ -3,13 +3,18 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
+import 'mdict/mdict_manager_service.dart';
 
 class DictionaryAudioService {
   final AudioPlayer _audioPlayer = AudioPlayer();
   final FlutterTts _flutterTts = FlutterTts();
+  final MDictManagerService? mdictManager;
   String _soundsDir = 'data_download/english-sounds';
 
-  DictionaryAudioService({String? customSoundsDir}) {
+  DictionaryAudioService({
+    this.mdictManager,
+    String? customSoundsDir,
+  }) {
     if (customSoundsDir != null) {
       _soundsDir = customSoundsDir;
     }
@@ -50,11 +55,41 @@ class DictionaryAudioService {
     return null;
   }
 
+  /// 4-tier pronunciation pipeline:
+  /// 1. MDD binary container (Sound_us_uk.mdd / pack companion .mdd)
+  /// 2. Local cached MP3 (english-sounds/)
+  /// 3. Youdao Web API download & cache
+  /// 4. System TTS fallback
   Future<void> playWord(String word, {String accent = 'us'}) async {
     final safeWord = word.trim();
     if (safeWord.isEmpty) return;
 
-    // 1. Check local offline file
+    // 1. Check MDD sound bank first!
+    if (mdictManager != null) {
+      try {
+        final audioBytes = await mdictManager!.getAudioBytes(safeWord, accent: accent);
+        if (audioBytes != null && audioBytes.isNotEmpty) {
+          final tempDir = Directory.systemTemp;
+          final isOgg = audioBytes.length >= 4 &&
+              audioBytes[0] == 0x4F &&
+              audioBytes[1] == 0x67 &&
+              audioBytes[2] == 0x67 &&
+              audioBytes[3] == 0x53; // OggS
+          final ext = isOgg ? 'spx' : 'mp3';
+          final tempFile = File('${tempDir.path}/mdd_voice_${safeWord}_$accent.$ext');
+          await tempFile.writeAsBytes(audioBytes, flush: true);
+
+          await _audioPlayer.stop();
+          await _audioPlayer.setFilePath(tempFile.path);
+          await _audioPlayer.play();
+          return;
+        }
+      } catch (e) {
+        debugPrint('MDD audio play error: $e');
+      }
+    }
+
+    // 2. Check local offline file
     final localPath = getLocalAudioPath(safeWord, accent: accent);
     if (localPath != null) {
       try {
@@ -67,7 +102,7 @@ class DictionaryAudioService {
       }
     }
 
-    // 2. Fetch from Youdao Web API and cache locally
+    // 3. Fetch from Youdao Web API and cache locally
     final youdaoUrl = getYoudaoAudioUrl(safeWord, accent: accent);
     try {
       final response = await http.get(Uri.parse(youdaoUrl)).timeout(
@@ -88,7 +123,7 @@ class DictionaryAudioService {
       debugPrint('Youdao fetch audio failed: $e');
     }
 
-    // 3. Fallback to system TTS
+    // 4. Fallback to system TTS
     await speakText(safeWord);
   }
 

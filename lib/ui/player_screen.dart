@@ -6,6 +6,7 @@ import '../models/waveform_gesture_mode.dart';
 import '../services/audio_player_service.dart';
 import '../services/dictionary_audio_service.dart';
 import '../services/dictionary_db_service.dart';
+import '../services/mdict/mdict_manager_service.dart';
 import '../services/waveform_extractor.dart';
 import 'audacity_theme.dart';
 import 'controls/ab_control_bar.dart';
@@ -26,7 +27,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final AudioPlayerService _playerService = AudioPlayerService();
   final WaveformExtractor _waveformExtractor = WaveformExtractor();
   final DictionaryDbService _dictDbService = DictionaryDbService();
-  final DictionaryAudioService _dictAudioService = DictionaryAudioService();
+  late final MDictManagerService _mdictManager;
+  late final DictionaryAudioService _dictAudioService;
   late final AbRepeatController _repeatController;
 
   int _selectedTabIndex = 0; // 0: Player, 1: Dictionary
@@ -39,6 +41,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+    _mdictManager = MDictManagerService();
+    _dictAudioService = DictionaryAudioService(mdictManager: _mdictManager);
+
     _repeatController = AbRepeatController(
       onSeekRequest: (d) => _playerService.seek(d),
       onPauseRequest: () => _playerService.pause(),
@@ -93,6 +98,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _playerService.dispose();
     _repeatController.dispose();
     _dictDbService.dispose();
+    _mdictManager.dispose();
     _dictAudioService.dispose();
     super.dispose();
   }
@@ -139,7 +145,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             Expanded(
               child: Text(
                 _dictDbService.isReady
-                    ? '查词引擎: 已连接 ecdict-ultimate.db + 权威例句库'
+                    ? '查词引擎: 已连接 ecdict-ultimate.db + 权威 MDX 词库群'
                     : '查词引擎: 准备就绪',
                 style: const TextStyle(color: Colors.white60, fontSize: 11),
                 overflow: TextOverflow.ellipsis,
@@ -149,8 +155,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
               const Icon(Icons.volume_up, size: 14, color: Color(0xFF3AAFA9)),
               const SizedBox(width: 4),
               Text(
-                '音频后台播放中 (${TimeRulerHelper.formatTime(_currentPos)})',
+                '音频播放中: ${_track.title}',
                 style: const TextStyle(color: Color(0xFF3AAFA9), fontSize: 11),
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ],
@@ -167,16 +174,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF263238) : Colors.transparent,
+          color: isSelected ? const Color(0xFF2C3E50) : Colors.transparent,
           borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF3AAFA9) : const Color(0xFF333333),
-          ),
+          border: isSelected ? Border.all(color: const Color(0xFF3AAFA9).withValues(alpha: 0.6)) : null,
         ),
         child: Text(
           title,
           style: TextStyle(
-            color: isSelected ? const Color(0xFF3AAFA9) : Colors.white70,
+            color: isSelected ? const Color(0xFFDEF2F1) : Colors.white60,
             fontSize: 12,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
           ),
@@ -237,9 +242,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 // 右侧列：精听参数调节 + 底部播放控制
                 Expanded(
                   flex: 52,
-                  child: SingleChildScrollView(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      border: Border(left: BorderSide(color: Color(0xFF1E1E1E), width: 1.5)),
+                    ),
+                    child: SingleChildScrollView(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -297,6 +304,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         DictionaryScreen(
                           dbService: _dictDbService,
                           audioService: _dictAudioService,
+                          mdictManager: _mdictManager,
                         ),
                       ],
                     ),

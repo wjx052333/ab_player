@@ -28,34 +28,22 @@ class AbControlBar extends StatelessWidget {
     final bText = state.pointB != null ? TimeRulerHelper.formatTime(state.pointB!) : '--:--.-';
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      color: const Color(0xFF2B2B2B),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: const BoxDecoration(
+        color: Color(0xFF242424),
+        border: Border(right: BorderSide(color: Color(0xFF383838), width: 1)),
+      ),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              ElevatedButton.icon(
-                icon: const Icon(Icons.flag, size: 16, color: Colors.amber),
-                label: const Text('设为 A 点'),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF383838)),
-                onPressed: onSetA,
-              ),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.outlined_flag, size: 16, color: Colors.orange),
-                label: const Text('设为 B 点'),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF383838)),
-                onPressed: onSetB,
-              ),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
-                label: const Text('清除'),
-                style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent),
-                onPressed: state.pointA != null || state.pointB != null ? onClear : null,
-              ),
+              _compactButton(Icons.flag, '设A点', Colors.amber, onSetA),
+              _compactButton(Icons.outlined_flag, '设B点', Colors.orange, onSetB),
+              _compactButton(Icons.close, '清除', Colors.redAccent, (state.pointA != null || state.pointB != null) ? onClear : null),
             ],
           ),
-          const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
@@ -68,26 +56,42 @@ class AbControlBar extends StatelessWidget {
     );
   }
 
+  Widget _compactButton(IconData icon, String label, Color color, VoidCallback? onPressed) {
+    return ElevatedButton.icon(
+      icon: Icon(icon, size: 14, color: color),
+      label: Text(label, style: const TextStyle(fontSize: 12)),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF333333),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      onPressed: onPressed,
+    );
+  }
+
   Widget _nudgeRow(String label, String timeStr, VoidCallback onMinus, VoidCallback onPlus) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Text('$label: $timeStr', style: const TextStyle(color: Colors.white70, fontSize: 13, fontFamily: 'monospace')),
-        const SizedBox(width: 4),
+        Text('$label:$timeStr', style: const TextStyle(color: Colors.white70, fontSize: 11, fontFamily: 'monospace')),
+        const SizedBox(width: 2),
         InkWell(
           onTap: onMinus,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(3)),
-            child: const Text('-0.1s', style: TextStyle(color: Colors.white60, fontSize: 11)),
+            child: const Text('-0.1s', style: TextStyle(color: Colors.white60, fontSize: 10)),
           ),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 2),
         InkWell(
           onTap: onPlus,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(3)),
-            child: const Text('+0.1s', style: TextStyle(color: Colors.white60, fontSize: 11)),
+            child: const Text('+0.1s', style: TextStyle(color: Colors.white60, fontSize: 10)),
           ),
         ),
       ],

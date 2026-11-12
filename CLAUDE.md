@@ -114,11 +114,23 @@ lib/
 - **持久化记录**：使用 `SharedPreferences` 保存外挂词典路径和启用状态，重启自动恢复；
 - **HTML 富文本与 CSS 注入**：基于 `flutter_widget_from_html` 呈现高保真词典原版排版，自动注入词典专属 `.css` 并适配暗黑主题；拦截 `sound://` 协议播放音频，拦截 `entry://` 协议实现单词联动跳转。
 
-### 3.4 4级发音调度管道 (`DictionaryAudioService`)
+### 3.4 跨平台目录管理规范 (Android vs Windows/Desktop)
+为杜绝 Android 上因工作目录只读或权限不足导致的 `FileSystemException: Cannot create directory (errno = 13)`，项目中涉及文件存储与探测时严格遵循跨平台分层策略：
+- **音频下载缓存 (`english-sounds/`)**：
+  - **Android / iOS**：严禁硬编码相对路径，通过 `path_provider` 调用 `getApplicationSupportDirectory()`，存入应用专属沙盒路径（`.../app_flutter/english-sounds`），无需高危外部存储权限，系统安全可写且卸载时自动清理；异常时降级至 `Directory.systemTemp`；
+  - **Windows / Desktop**：优先探测项目工作区 `data_download/english-sounds`（便于本地开发与持久化检查），若不存在则使用系统文档目录 `getApplicationDocumentsDirectory()/english-sounds`。
+- **离线词典探测 (`ecdict-ultimate.db`, `.mdx`, `.mdd`)**：
+  - **分层探测优先级**：
+    1. 用户自定义路径（通过 UI 上的 `file_picker` 选取并由 `SharedPreferences` 持久化）；
+    2. 桌面环境探测：相对路径 `data_download/...`；
+    3. 移动端/跨平台环境探测：系统下载目录 `getDownloadsDirectory()`（即 `/storage/emulated/0/Download/`，用户拷入常用位置）以及应用文档目录 `getApplicationDocumentsDirectory()`；
+    4. 应用沙盒支持目录 `getApplicationSupportDirectory()`。
+
+### 3.5 4级发音调度管道 (`DictionaryAudioService`)
 彻底杜绝手机文件系统中产生数万个散落 MP3 碎文件的弊端：
-1. **第 1 级（MDD 离线容器，优先推荐）**：优先从 `Sound_us_uk.mdd` 或词典自带 MDD 中获取美音/英音（支持 `\word.spx`, `\word_uk.spx`, `\word.mp3`），取出二进制音频流播放；
-2. **第 2 级（本地散装 MP3 缓存）**：检测 `english-sounds/${word}_${accent}.mp3`；
-3. **第 3 级（在线有道开放 API）**：若本地缺失且有网络，自动拉取有道音频并持久化缓存到本地；
+1. **第 1 级（MDD 离线容器，优先推荐）**：优先从 `Sound_us_uk.mdd` 或词典自带 MDD 中获取美音/英音（支持 `\word.spx`, `\word_uk.spx`, `\word.mp3`），取出二进制音频流写入临时播放缓存播放；
+2. **第 2 级（本地散装 MP3 缓存）**：检测跨平台安全缓存目录下的 `${word}_${accent}.mp3`；
+3. **第 3 级（在线有道开放 API）**：若本地缺失且有网络，自动拉取有道音频并持久化保存到安全缓存目录；
 4. **第 4 级（系统 TTS 保底）**：断网且完全无离线资源时降级回退至 `flutter_tts` 本地语音合成。
 
 ---

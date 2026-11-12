@@ -145,12 +145,12 @@ class DictionaryAudioService {
     } catch (_) {}
   }
 
-  void dispose() {
+  Future<void> dispose() async {
     try {
-      _audioPlayer.dispose();
+      await _audioPlayer.dispose();
     } catch (_) {}
     try {
-      _flutterTts.stop();
+      await _flutterTts.stop();
     } catch (_) {}
   }
 }

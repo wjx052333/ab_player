@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../controllers/ab_repeat_controller.dart';
 import '../models/audio_track.dart';
+import '../models/waveform_gesture_mode.dart';
 import '../services/audio_player_service.dart';
 import '../services/waveform_extractor.dart';
 import 'controls/ab_control_bar.dart';
@@ -26,6 +27,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Duration _currentPos = Duration.zero;
   bool _isPlaying = false;
   bool _isLoading = false;
+  WaveformGestureMode _gestureMode = WaveformGestureMode.drag;
 
   @override
   void initState() {
@@ -136,6 +138,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       totalDuration: _track.duration,
                       currentPosition: _currentPos,
                       repeatState: _repeatController.state,
+                      isPlaying: _isPlaying,
+                      gestureMode: _gestureMode,
                       onSeek: (pos) => _playerService.seek(pos),
                       onRangeSelected: (p1, p2) => _repeatController.setSelectionRange(p1, p2),
                       onPointAMoved: (pos) => _repeatController.markPointA(pos),
@@ -150,12 +154,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       color: const Color(0xFF222222),
                       child: Row(
                         children: [
-                          // 左侧列：A-B 控制与微调
+                          // 左侧列：手势切换 + A-B 控制与微调
                           Expanded(
-                            flex: 46,
+                            flex: 48,
                             child: AbControlBar(
                               state: _repeatController.state,
                               currentPosition: _currentPos,
+                              gestureMode: _gestureMode,
+                              onGestureModeChanged: (mode) => setState(() => _gestureMode = mode),
                               onSetA: () => _repeatController.markPointA(_currentPos),
                               onSetB: () => _repeatController.markPointB(_currentPos),
                               onClear: () => _repeatController.clearSelection(),
@@ -164,9 +170,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                           ),
 
-                          // 右侧列：精听参数调节 + 底部播放控制 (防极端小高度溢出，外层包 SingleChildScrollView)
+                          // 右侧列：精听参数调节 + 底部播放控制
                           Expanded(
-                            flex: 54,
+                            flex: 52,
                             child: SingleChildScrollView(
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),

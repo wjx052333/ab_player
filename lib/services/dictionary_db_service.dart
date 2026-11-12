@@ -43,11 +43,13 @@ class DictionaryDbService {
       if (f.existsSync()) return f;
     }
 
-    // 1. Current relative directory (data_download/...)
-    final relFile = File('data_download/$defaultFileName');
-    if (relFile.existsSync()) return relFile;
+    // 1. Desktop / Windows dev relative directory (data_download/...)
+    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
+      final relFile = File('data_download/$defaultFileName');
+      if (relFile.existsSync()) return relFile;
+    }
 
-    // 2. Try standard downloads or docs folder via path_provider
+    // 2. Android / iOS & cross-platform: system downloads & documents directory
     try {
       final downloadsDir = await getDownloadsDirectory();
       if (downloadsDir != null) {
@@ -58,6 +60,10 @@ class DictionaryDbService {
       final docDir = await getApplicationDocumentsDirectory();
       final f2 = File('${docDir.path}/$defaultFileName');
       if (f2.existsSync()) return f2;
+
+      final supportDir = await getApplicationSupportDirectory();
+      final f3 = File('${supportDir.path}/$defaultFileName');
+      if (f3.existsSync()) return f3;
     } catch (_) {}
 
     return null;

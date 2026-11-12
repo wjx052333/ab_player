@@ -34,14 +34,14 @@ void main() {
       expect(ukUrl, 'https://dict.youdao.com/dictvoice?audio=test&type=1');
     });
 
-    test('resolves local audio path if cached in english-sounds', () {
+    test('resolves local audio path if cached in english-sounds', () async {
       final dir = Directory('data_download/english-sounds');
       if (!dir.existsSync()) dir.createSync(recursive: true);
 
       final dummyFile = File('data_download/english-sounds/dummy_test_us.mp3');
       dummyFile.writeAsStringSync('dummy');
 
-      final localPath = service.getLocalAudioPath('dummy_test', accent: 'us');
+      final localPath = await service.getLocalAudioPath('dummy_test', accent: 'us');
       expect(localPath, isNotNull);
       expect(File(localPath!).existsSync(), true);
 

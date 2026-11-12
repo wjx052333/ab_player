@@ -3,29 +3,97 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'mdict/mdict_manager_service.dart';
 
 class DictionaryAudioService {
   final AudioPlayer _audioPlayer = AudioPlayer();
   final FlutterTts _flutterTts = FlutterTts();
   final MDictManagerService? mdictManager;
-  String _soundsDir = 'data_download/english-sounds';
+  final String? customSoundsDir;
+
+  String? _resolvedSoundsDir;
+  bool _isInit = false;
 
   DictionaryAudioService({
     this.mdictManager,
-    String? customSoundsDir,
+    this.customSoundsDir,
   }) {
-    if (customSoundsDir != null) {
-      _soundsDir = customSoundsDir;
-    }
-    _ensureSoundsDirExists();
-    _initTts();
+    _initAsync();
   }
 
-  void _ensureSoundsDirExists() {
-    final dir = Directory(_soundsDir);
-    if (!dir.existsSync()) {
-      dir.createSync(recursive: true);
+  Future<void> _initAsync() async {
+    if (_isInit) return;
+    await _ensureSoundsDir();
+    await _initTts();
+    _isInit = true;
+  }
+
+  /// Resolve platform-safe sounds cache directory.
+  /// - On Android / iOS: Always use app sandbox storage (ApplicationSupportDirectory / CacheDirectory)
+  /// - On Desktop / Windows: Prefer 'data_download/english-sounds' if 'data_download' exists, else sandbox
+  Future<String> _ensureSoundsDir() async {
+    if (_resolvedSoundsDir != null) return _resolvedSoundsDir!;
+
+    if (customSoundsDir != null && customSoundsDir!.isNotEmpty) {
+      final dir = Directory(customSoundsDir!);
+      if (!dir.existsSync()) {
+        try {
+          dir.createSync(recursive: true);
+        } catch (_) {}
+      }
+      _resolvedSoundsDir = dir.path;
+      return _resolvedSoundsDir!;
+    }
+
+    // Platform-specific logic:
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      // In Android, must use sandbox directory to avoid permission denied
+      try {
+        final supportDir = await getApplicationSupportDirectory();
+        final dir = Directory('${supportDir.path}/english-sounds');
+        if (!dir.existsSync()) {
+          dir.createSync(recursive: true);
+        }
+        _resolvedSoundsDir = dir.path;
+        return _resolvedSoundsDir!;
+      } catch (e) {
+        debugPrint('Failed to getApplicationSupportDirectory, fallback to temp: $e');
+        final tempDir = Directory.systemTemp;
+        final dir = Directory('${tempDir.path}/english-sounds');
+        if (!dir.existsSync()) {
+          dir.createSync(recursive: true);
+        }
+        _resolvedSoundsDir = dir.path;
+        return _resolvedSoundsDir!;
+      }
+    }
+
+    // Windows / Desktop dev environment:
+    try {
+      final devDir = Directory('data_download/english-sounds');
+      if (Directory('data_download').existsSync()) {
+        if (!devDir.existsSync()) {
+          devDir.createSync(recursive: true);
+        }
+        _resolvedSoundsDir = devDir.path;
+        return _resolvedSoundsDir!;
+      }
+    } catch (_) {}
+
+    // Fallback for desktop when data_download does not exist:
+    try {
+      final appDocDir = await getApplicationDocumentsDirectory();
+      final dir = Directory('${appDocDir.path}/english-sounds');
+      if (!dir.existsSync()) {
+        dir.createSync(recursive: true);
+      }
+      _resolvedSoundsDir = dir.path;
+      return _resolvedSoundsDir!;
+    } catch (_) {
+      final tempDir = Directory.systemTemp;
+      _resolvedSoundsDir = '${tempDir.path}/english-sounds';
+      return _resolvedSoundsDir!;
     }
   }
 
@@ -45,10 +113,11 @@ class DictionaryAudioService {
     return 'https://dict.youdao.com/dictvoice?audio=${Uri.encodeComponent(word)}&type=$type';
   }
 
-  String? getLocalAudioPath(String word, {required String accent}) {
+  Future<String?> getLocalAudioPath(String word, {required String accent}) async {
     final safeWord = word.trim().toLowerCase();
     final ext = '${safeWord}_${accent.toLowerCase()}.mp3';
-    final file = File('$_soundsDir/$ext');
+    final soundsDir = await _ensureSoundsDir();
+    final file = File('$soundsDir/$ext');
     if (file.existsSync() && file.lengthSync() > 0) {
       return file.path;
     }
@@ -57,7 +126,7 @@ class DictionaryAudioService {
 
   /// 4-tier pronunciation pipeline:
   /// 1. MDD binary container (Sound_us_uk.mdd / pack companion .mdd)
-  /// 2. Local cached MP3 (english-sounds/)
+  /// 2. Local cached MP3 (platform-safe english-sounds/)
   /// 3. Youdao Web API download & cache
   /// 4. System TTS fallback
   Future<void> playWord(String word, {String accent = 'us'}) async {
@@ -89,8 +158,8 @@ class DictionaryAudioService {
       }
     }
 
-    // 2. Check local offline file
-    final localPath = getLocalAudioPath(safeWord, accent: accent);
+    // 2. Check local offline file in platform-safe cache directory
+    final localPath = await getLocalAudioPath(safeWord, accent: accent);
     if (localPath != null) {
       try {
         await _audioPlayer.stop();
@@ -110,7 +179,8 @@ class DictionaryAudioService {
       );
 
       if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
-        final targetPath = '$_soundsDir/${safeWord.toLowerCase()}_${accent.toLowerCase()}.mp3';
+        final soundsDir = await _ensureSoundsDir();
+        final targetPath = '$soundsDir/${safeWord.toLowerCase()}_${accent.toLowerCase()}.mp3';
         final file = File(targetPath);
         await file.writeAsBytes(response.bodyBytes);
 

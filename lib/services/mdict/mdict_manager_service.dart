@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'mdict_dictionary_pack.dart';
 import 'mdict_reader.dart';
@@ -21,7 +22,7 @@ class MDictManagerService extends ChangeNotifier {
     // 1. Auto-discover dedicated Sound_us_uk.mdd
     await _initDedicatedAudioMdd();
 
-    // 2. Discover built-in or default local dictionaries in data_download
+    // 2. Discover built-in or default local dictionaries in data_download / documents
     await _discoverDefaultPacks();
 
     // 3. Load user-added dictionary paths from SharedPreferences
@@ -32,14 +33,14 @@ class MDictManagerService extends ChangeNotifier {
   }
 
   Future<void> _initDedicatedAudioMdd() async {
-    final candidatePaths = [
-      'data_download/Sound_us_uk/Sound_us_uk.mdd',
-      'data_download/Sound_us_uk/sound.mdd',
-      'data_download/Sound_us_uk.mdd',
-    ];
+    final candidateFiles = await _resolveCandidateFiles([
+      'Sound_us_uk/Sound_us_uk.mdd',
+      'Sound_us_uk/sound.mdd',
+      'Sound_us_uk.mdd',
+      'sound.mdd',
+    ]);
 
-    for (final p in candidatePaths) {
-      final f = File(p);
+    for (final f in candidateFiles) {
       if (f.existsSync()) {
         try {
           _dedicatedAudioMdd = await MDictReader.open(f.path);
@@ -53,24 +54,61 @@ class MDictManagerService extends ChangeNotifier {
   }
 
   Future<void> _discoverDefaultPacks() async {
-    final defaults = [
-      {
-        'mdx': 'data_download/oxfordPrimary/oxfordPrimary.mdx',
-        'title': '📘 牛津初阶',
-      },
-      {
-        'mdx': 'data_download/LongmanDictionaryOfContemporaryEnglish6thEnEn/LongmanDictionaryOfContemporaryEnglish6thEnEn.mdx',
-        'title': '📙 朗文当代 6th',
-      },
-    ];
-
-    for (final item in defaults) {
-      final path = item['mdx']!;
-      final title = item['title'];
-      if (File(path).existsSync()) {
-        await addPackFromFile(path, customTitle: title, saveToPrefs: false);
+    final oxfordCandidates = await _resolveCandidateFiles([
+      'oxfordPrimary/oxfordPrimary.mdx',
+      'oxfordPrimary.mdx',
+    ]);
+    for (final f in oxfordCandidates) {
+      if (f.existsSync()) {
+        await addPackFromFile(f.path, customTitle: '📘 牛津初阶', saveToPrefs: false);
+        break;
       }
     }
+
+    final longmanCandidates = await _resolveCandidateFiles([
+      'LongmanDictionaryOfContemporaryEnglish6thEnEn/LongmanDictionaryOfContemporaryEnglish6thEnEn.mdx',
+      'LongmanDictionaryOfContemporaryEnglish6thEnEn.mdx',
+    ]);
+    for (final f in longmanCandidates) {
+      if (f.existsSync()) {
+        await addPackFromFile(f.path, customTitle: '📙 朗文当代 6th', saveToPrefs: false);
+        break;
+      }
+    }
+  }
+
+  /// Platform-adaptive candidate file resolution (Windows dev folder vs Android download/doc folder)
+  Future<List<File>> _resolveCandidateFiles(List<String> relativeSubpaths) async {
+    final results = <File>[];
+
+    // 1. Windows / Desktop relative development path
+    if (!kIsWeb && !Platform.isAndroid && !Platform.isIOS) {
+      for (final rel in relativeSubpaths) {
+        results.add(File('data_download/$rel'));
+      }
+    }
+
+    // 2. Android / System downloads directory
+    try {
+      final downloadDir = await getDownloadsDirectory();
+      if (downloadDir != null) {
+        for (final rel in relativeSubpaths) {
+          results.add(File('${downloadDir.path}/$rel'));
+          results.add(File('${downloadDir.path}/${rel.split("/").last}'));
+        }
+      }
+    } catch (_) {}
+
+    // 3. Android / App documents directory
+    try {
+      final docDir = await getApplicationDocumentsDirectory();
+      for (final rel in relativeSubpaths) {
+        results.add(File('${docDir.path}/$rel'));
+        results.add(File('${docDir.path}/${rel.split("/").last}'));
+      }
+    } catch (_) {}
+
+    return results;
   }
 
   Future<void> _loadSavedUserPacks() async {

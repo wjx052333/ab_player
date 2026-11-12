@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/repeat_state.dart';
 import '../../models/waveform_gesture_mode.dart';
+import '../audacity_theme.dart';
 import '../waveform/time_ruler_helper.dart';
 
 class AbControlBar extends StatelessWidget {
@@ -35,8 +36,8 @@ class AbControlBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: const BoxDecoration(
-        color: Color(0xFF242424),
-        border: Border(right: BorderSide(color: Color(0xFF383838), width: 1)),
+        color: AudacityTheme.panelBackground,
+        border: Border(right: BorderSide(color: AudacityTheme.panelBorder, width: 1)),
       ),
       child: Center(
         child: SingleChildScrollView(
@@ -163,7 +164,7 @@ class AbControlBar extends StatelessWidget {
       icon: Icon(icon, size: 13, color: color),
       label: Text(label, style: const TextStyle(fontSize: 11)),
       style: ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xFF333333),
+        backgroundColor: const Color(0xFF383838),
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         minimumSize: Size.zero,

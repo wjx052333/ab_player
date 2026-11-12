@@ -5,6 +5,7 @@ import '../models/audio_track.dart';
 import '../models/waveform_gesture_mode.dart';
 import '../services/audio_player_service.dart';
 import '../services/waveform_extractor.dart';
+import 'audacity_theme.dart';
 import 'controls/ab_control_bar.dart';
 import 'controls/player_bottom_bar.dart';
 import 'controls/study_tuning_bar.dart';
@@ -101,7 +102,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   Container(
                     height: 32,
                     padding: const EdgeInsets.symmetric(horizontal: 10),
-                    color: const Color(0xFF181818),
+                    color: const Color(0xFF101010),
                     child: Row(
                       children: [
                         InkWell(
@@ -130,28 +131,36 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     ),
                   ),
 
-                  // 2. 上半部分：全宽波形与时间标尺视口
+                  // 2. 上半部分：全宽波形与时间标尺视口 (带有金属内嵌边框感)
                   Expanded(
                     flex: 52,
-                    child: AudacityWaveformView(
-                      peaks: _track.peaks,
-                      totalDuration: _track.duration,
-                      currentPosition: _currentPos,
-                      repeatState: _repeatController.state,
-                      isPlaying: _isPlaying,
-                      gestureMode: _gestureMode,
-                      onSeek: (pos) => _playerService.seek(pos),
-                      onRangeSelected: (p1, p2) => _repeatController.setSelectionRange(p1, p2),
-                      onPointAMoved: (pos) => _repeatController.markPointA(pos),
-                      onPointBMoved: (pos) => _repeatController.markPointB(pos),
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          top: BorderSide(color: Color(0xFF262626), width: 1),
+                          bottom: BorderSide(color: Color(0xFF333333), width: 1.5),
+                        ),
+                      ),
+                      child: AudacityWaveformView(
+                        peaks: _track.peaks,
+                        totalDuration: _track.duration,
+                        currentPosition: _currentPos,
+                        repeatState: _repeatController.state,
+                        isPlaying: _isPlaying,
+                        gestureMode: _gestureMode,
+                        onSeek: (pos) => _playerService.seek(pos),
+                        onRangeSelected: (p1, p2) => _repeatController.setSelectionRange(p1, p2),
+                        onPointAMoved: (pos) => _repeatController.markPointA(pos),
+                        onPointBMoved: (pos) => _repeatController.markPointB(pos),
+                      ),
                     ),
                   ),
 
-                  // 3. 下半部分：左右分栏控制区
+                  // 3. 下半部分：左右分栏控制区 (金属灰色底板，与暗黑示波器屏幕鲜明区分)
                   Expanded(
                     flex: 48,
                     child: Container(
-                      color: const Color(0xFF222222),
+                      color: AudacityTheme.panelBackground,
                       child: Row(
                         children: [
                           // 左侧列：手势切换 + A-B 控制与微调

@@ -50,10 +50,47 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
   void didUpdateWidget(covariant AudacityWaveformView oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // 播放中且用户未在触控交互时，波形居中跟随播放指针
+    // 播放中且用户未在触控交互时，检查是否需要跟随
     if (widget.isPlaying && !_isUserInteracting) {
-      _centerPlayhead();
+      _checkAndFollowPlayhead();
     }
+  }
+
+  /// 最小缩放比例：计算刚好占满视口宽度的 PPS，不能再缩小
+  double _minPixelsPerSecond(double width) {
+    final totalSec = widget.totalDuration.inMilliseconds / 1000.0;
+    if (totalSec <= 0 || width <= 0) return 10.0;
+    return max(5.0, width / totalSec);
+  }
+
+  /// 判断 A-B 选区是否都在当前屏幕可视范围内
+  bool _isSelectionFullyVisible(double width) {
+    if (!widget.repeatState.isActive ||
+        widget.repeatState.pointA == null ||
+        widget.repeatState.pointB == null) {
+      return false;
+    }
+
+    final aSec = widget.repeatState.pointA!.inMilliseconds / 1000.0;
+    final bSec = widget.repeatState.pointB!.inMilliseconds / 1000.0;
+
+    final ax = aSec * _pixelsPerSecond - _scrollOffset;
+    final bx = bSec * _pixelsPerSecond - _scrollOffset;
+
+    // 两端都在屏幕可见宽度内（预留少许安全边距）
+    return ax >= -5 && bx <= width + 5;
+  }
+
+  void _checkAndFollowPlayhead({double? viewportWidth}) {
+    final width = viewportWidth ?? (context.findRenderObject() as RenderBox?)?.size.width ?? 0;
+    if (width <= 0) return;
+
+    // 如果 A-B 选区完全在当前屏幕视野内，锁定波形静止，不跟随滚动
+    if (_isSelectionFullyVisible(width)) {
+      return;
+    }
+
+    _centerPlayhead(viewportWidth: width);
   }
 
   void _centerPlayhead({double? viewportWidth}) {
@@ -66,6 +103,31 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
 
     setState(() {
       _scrollOffset = targetScroll.clamp(0.0, _maxScroll(width));
+    });
+  }
+
+  /// 以当前光标（Playhead）为视觉锚点进行缩放
+  void _zoomAroundPlayhead(double factor, double width) {
+    final minPPS = _minPixelsPerSecond(width);
+    const maxPPS = 300.0;
+
+    final newPPS = (_pixelsPerSecond * factor).clamp(minPPS, maxPPS);
+    if ((newPPS - _pixelsPerSecond).abs() < 0.001) return;
+
+    final currentSec = widget.currentPosition.inMilliseconds / 1000.0;
+    final oldPlayheadScreenX = currentSec * _pixelsPerSecond - _scrollOffset;
+
+    // 如果光标在视口范围内，以光标屏幕横坐标为锚点；否则以视口正中央为锚点
+    final anchorScreenX = (oldPlayheadScreenX >= 0 && oldPlayheadScreenX <= width)
+        ? oldPlayheadScreenX
+        : (width / 2);
+
+    final newScroll = currentSec * newPPS - anchorScreenX;
+    final newMaxScroll = max(0.0, (widget.totalDuration.inMilliseconds / 1000.0) * newPPS - width);
+
+    setState(() {
+      _pixelsPerSecond = newPPS;
+      _scrollOffset = newScroll.clamp(0.0, newMaxScroll);
     });
   }
 
@@ -91,6 +153,9 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
+        final minPPS = _minPixelsPerSecond(width);
+        final canZoomOut = _pixelsPerSecond > minPPS + 0.5;
+        final canZoomIn = _pixelsPerSecond < 300.0 - 0.5;
 
         return Stack(
           children: [
@@ -98,10 +163,10 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
               onTapUp: (details) {
                 final target = _xToDuration(details.localPosition.dx, width);
                 widget.onSeek(target);
-                // 点击跳转后立即恢复居中
+                // 点击跳转后立即响应
                 _isUserInteracting = false;
                 _interactionCooldownTimer?.cancel();
-                _centerPlayhead(viewportWidth: width);
+                _checkAndFollowPlayhead(viewportWidth: width);
               },
               onScaleStart: (details) {
                 _isUserInteracting = true;
@@ -138,11 +203,18 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
                   return;
                 }
 
-                // 2. 双指捏合缩放
+                // 2. 双指捏合缩放 (以手势焦点为锚点)
                 if (details.scale != 1.0) {
+                  final focalX = details.localFocalPoint.dx;
+                  final timeAtFocal = (focalX + _scrollOffset) / _pixelsPerSecond;
+
+                  final newPPS = (_pixelsPerSecond * details.scale).clamp(minPPS, 300.0);
+                  final newScroll = timeAtFocal * newPPS - focalX;
+                  final newMaxScroll = max(0.0, (widget.totalDuration.inMilliseconds / 1000.0) * newPPS - width);
+
                   setState(() {
-                    _pixelsPerSecond = (_pixelsPerSecond * details.scale).clamp(10.0, 300.0);
-                    _scrollOffset = _scrollOffset.clamp(0.0, _maxScroll(width));
+                    _pixelsPerSecond = newPPS;
+                    _scrollOffset = newScroll.clamp(0.0, newMaxScroll);
                   });
                   return;
                 }
@@ -175,13 +247,13 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
                 _dragStartScrollOffset = null;
                 _activeHandle = null;
 
-                // 松手 1.5 秒后平滑恢复播放居中跟随
+                // 松手 1.5 秒后平滑恢复播放跟随 (若 A-B 不在全屏内)
                 _interactionCooldownTimer?.cancel();
                 _interactionCooldownTimer = Timer(const Duration(milliseconds: 1500), () {
                   if (mounted) {
                     _isUserInteracting = false;
                     if (widget.isPlaying) {
-                      _centerPlayhead(viewportWidth: width);
+                      _checkAndFollowPlayhead(viewportWidth: width);
                     }
                   }
                 });
@@ -199,19 +271,21 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
               ),
             ),
 
-            // 悬浮缩放快捷按钮
+            // 悬浮缩放快捷按钮 (以光标为中心缩放，缩小到充满屏幕即止)
             Positioned(
               right: 12,
               bottom: 8,
               child: Row(
                 children: [
-                  _miniButton(Icons.zoom_in, () {
-                    setState(() => _pixelsPerSecond = (_pixelsPerSecond * 1.3).clamp(10.0, 300.0));
-                  }),
+                  _miniButton(
+                    Icons.zoom_in,
+                    canZoomIn ? () => _zoomAroundPlayhead(1.3, width) : null,
+                  ),
                   const SizedBox(width: 6),
-                  _miniButton(Icons.zoom_out, () {
-                    setState(() => _pixelsPerSecond = (_pixelsPerSecond / 1.3).clamp(10.0, 300.0));
-                  }),
+                  _miniButton(
+                    Icons.zoom_out,
+                    canZoomOut ? () => _zoomAroundPlayhead(1 / 1.3, width) : null,
+                  ),
                 ],
               ),
             ),
@@ -221,14 +295,16 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
     );
   }
 
-  Widget _miniButton(IconData icon, VoidCallback onPressed) {
+  Widget _miniButton(IconData icon, VoidCallback? onPressed) {
+    final enabled = onPressed != null;
     return Container(
       decoration: BoxDecoration(
-        color: Colors.black.withAlpha(153),
+        color: Colors.black.withAlpha(enabled ? 160 : 70),
         borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: Colors.white12, width: 0.5),
       ),
       child: IconButton(
-        icon: Icon(icon, color: Colors.white70, size: 18),
+        icon: Icon(icon, color: enabled ? Colors.white70 : Colors.white24, size: 18),
         onPressed: onPressed,
         constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
         padding: EdgeInsets.zero,

@@ -36,7 +36,7 @@ void main() {
     expect(find.text('test'), findsOneWidget);
     expect(find.text('/test/'), findsOneWidget);
     expect(find.text('中考'), findsOneWidget);
-    expect(find.text('四级'), findsOneWidget);
+    expect(find.text('四级'), findsNothing); // 只显示最低一级
     expect(find.text('US 🔊'), findsOneWidget);
     expect(find.text('UK 🔊'), findsOneWidget);
   });

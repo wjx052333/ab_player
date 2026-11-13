@@ -29,7 +29,29 @@ void main() {
       expect(controller.state.isActive, isTrue);
     });
 
+    test('选区在当前位置之后时立即 Seek 到 A 点', () {
+      controller.onPositionChanged(const Duration(seconds: 0));
+      controller.markPointA(const Duration(seconds: 5));
+      expect(seekTarget, isNull); // 只有 A 点还不构成选区
+
+      controller.markPointB(const Duration(seconds: 8));
+      expect(seekTarget, const Duration(seconds: 5));
+    });
+
+    test('当前位置已在选区内时不打断播放', () {
+      controller.onPositionChanged(const Duration(seconds: 6));
+      controller.setSelectionRange(const Duration(seconds: 5), const Duration(seconds: 8));
+      expect(seekTarget, isNull);
+    });
+
+    test('划选选区在当前位置之后时立即 Seek 到 A 点', () {
+      controller.onPositionChanged(const Duration(seconds: 1));
+      controller.setSelectionRange(const Duration(seconds: 8), const Duration(seconds: 5));
+      expect(seekTarget, const Duration(seconds: 5));
+    });
+
     test('到达 B 点时应触发 Seek 回 A 点', () async {
+      controller.onPositionChanged(const Duration(milliseconds: 1500));
       controller.markPointA(const Duration(seconds: 1));
       controller.markPointB(const Duration(seconds: 3));
 

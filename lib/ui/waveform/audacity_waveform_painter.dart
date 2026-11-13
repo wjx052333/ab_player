@@ -2,10 +2,13 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../audacity_theme.dart';
 import '../../models/repeat_state.dart';
+import '../../models/speech_segment.dart';
 import 'time_ruler_helper.dart';
 
 class AudacityWaveformPainter extends CustomPainter {
   final List<double> peaks;
+  final double peaksPerSecond; // 0 表示按 peaks 铺满总时长推算
+  final List<SpeechSegment> segments;
   final Duration totalDuration;
   final Duration currentPosition;
   final RepeatState repeatState;
@@ -14,6 +17,8 @@ class AudacityWaveformPainter extends CustomPainter {
 
   AudacityWaveformPainter({
     required this.peaks,
+    this.peaksPerSecond = 0,
+    this.segments = const [],
     required this.totalDuration,
     required this.currentPosition,
     required this.repeatState,
@@ -42,6 +47,9 @@ class AudacityWaveformPainter extends CustomPainter {
 
     // 2. 绘制时间刻度标尺 (带视口裁剪)
     _drawRuler(canvas, size, rulerHeight);
+
+    // 3a. 说话区间底色 (没有底色的暗区即句间停顿)
+    _drawSegments(canvas, size, rulerHeight);
 
     // 3. 绘制波峰 (视口裁剪 Viewport Clipping)
     _drawWaveform(canvas, size, rulerHeight, centerY);
@@ -78,32 +86,52 @@ class AudacityWaveformPainter extends CustomPainter {
     }
   }
 
+  /// 说话区间：淡青底色 + 区间首尾竖线 + 底部色条，一眼分出「句子」与「停顿」
+  void _drawSegments(Canvas canvas, Size size, double rulerHeight) {
+    if (segments.isEmpty) return;
+    final fill = Paint()..color = const Color(0x143AAFA9);
+    final edge = Paint()
+      ..color = const Color(0x663AAFA9)
+      ..strokeWidth = 1.0;
+    final bar = Paint()..color = AudacityTheme.waveform;
+
+    for (final seg in segments) {
+      final x1 = seg.start.inMilliseconds / 1000.0 * pixelsPerSecond - scrollOffset;
+      final x2 = seg.end.inMilliseconds / 1000.0 * pixelsPerSecond - scrollOffset;
+      if (x2 < 0 || x1 > size.width) continue;
+      canvas.drawRect(Rect.fromLTRB(x1, rulerHeight, x2, size.height), fill);
+      canvas.drawLine(Offset(x1, rulerHeight), Offset(x1, size.height), edge);
+      canvas.drawLine(Offset(x2, rulerHeight), Offset(x2, size.height), edge);
+      canvas.drawRect(Rect.fromLTRB(x1, size.height - 3, x2, size.height), bar);
+    }
+  }
+
   void _drawWaveform(Canvas canvas, Size size, double rulerHeight, double centerY) {
-    if (peaks.isEmpty || totalDuration.inMilliseconds == 0) return;
+    final totalSec = totalDuration.inMilliseconds / 1000.0;
+    if (peaks.isEmpty || totalSec <= 0) return;
 
     final wavePaint = Paint()
       ..color = AudacityTheme.waveform
-      ..strokeWidth = 2.0
-      ..strokeCap = StrokeCap.round;
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.butt;
 
-    final visibleStartSec = max(0.0, scrollOffset / pixelsPerSecond);
-    final visibleEndSec = min(totalDuration.inMilliseconds / 1000.0, (scrollOffset + size.width) / pixelsPerSecond);
-
-    final startIdx = ((visibleStartSec / (totalDuration.inMilliseconds / 1000.0)) * peaks.length).floor().clamp(0, peaks.length - 1);
-    final endIdx = ((visibleEndSec / (totalDuration.inMilliseconds / 1000.0)) * peaks.length).ceil().clamp(0, peaks.length - 1);
-
+    final pps = peaksPerSecond > 0 ? peaksPerSecond : peaks.length / totalSec;
     final maxHalfHeight = (size.height - rulerHeight) / 2 * 0.9;
 
-    for (int i = startIdx; i <= endIdx; i++) {
-      final sec = (i / peaks.length) * (totalDuration.inMilliseconds / 1000.0);
-      final x = sec * pixelsPerSecond - scrollOffset;
-      final peakHeight = peaks[i] * maxHalfHeight;
+    // 按屏幕像素列取该列覆盖时间段内的最大响度，缩得再小也不丢峰值
+    for (int px = 0; px <= size.width; px++) {
+      final t0 = (px + scrollOffset) / pixelsPerSecond;
+      if (t0 > totalSec) break;
+      final t1 = (px + 1 + scrollOffset) / pixelsPerSecond;
+      final i0 = (t0 * pps).floor().clamp(0, peaks.length - 1);
+      final i1 = max(i0, (t1 * pps).ceil() - 1).clamp(0, peaks.length - 1);
 
-      canvas.drawLine(
-        Offset(x, centerY - peakHeight),
-        Offset(x, centerY + peakHeight),
-        wavePaint,
-      );
+      double peak = 0;
+      for (int i = i0; i <= i1; i++) {
+        if (peaks[i] > peak) peak = peaks[i];
+      }
+      final h = max(0.5, peak * maxHalfHeight);
+      canvas.drawLine(Offset(px.toDouble(), centerY - h), Offset(px.toDouble(), centerY + h), wavePaint);
     }
   }
 
@@ -177,6 +205,7 @@ class AudacityWaveformPainter extends CustomPainter {
         oldDelegate.repeatState != repeatState ||
         oldDelegate.scrollOffset != scrollOffset ||
         oldDelegate.pixelsPerSecond != pixelsPerSecond ||
-        oldDelegate.peaks != peaks;
+        oldDelegate.peaks != peaks ||
+        oldDelegate.segments != segments;
   }
 }

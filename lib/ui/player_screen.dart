@@ -1,21 +1,24 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../controllers/ab_repeat_controller.dart';
 import '../models/audio_track.dart';
+import '../models/speech_segment.dart';
 import '../models/waveform_gesture_mode.dart';
 import '../services/audio_player_service.dart';
 import '../services/dictionary_audio_service.dart';
 import '../services/dictionary_db_service.dart';
 import '../services/mdict/mdict_manager_service.dart';
+import '../services/speech_segmenter.dart';
 import '../services/waveform_extractor.dart';
 import 'audacity_theme.dart';
 import 'controls/ab_control_bar.dart';
 import 'controls/player_bottom_bar.dart';
+import 'controls/segmenter_settings_dialog.dart';
 import 'controls/study_tuning_bar.dart';
 import 'dictionary/dictionary_screen.dart';
 import 'dictionary/widgets/dict_pack_chip_bar.dart';
 import 'waveform/audacity_waveform_view.dart';
-import 'waveform/time_ruler_helper.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -39,11 +42,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Duration _currentPos = Duration.zero;
   bool _isPlaying = false;
   bool _isLoading = false;
+  double? _loadProgress; // null: 不确定进度
+  String _loadStage = '';
+  DateTime? _lastBackAt;
+  SpeechSegmenter _segmenter = const SpeechSegmenter();
   WaveformGestureMode _gestureMode = WaveformGestureMode.drag;
 
   @override
   void initState() {
     super.initState();
+    _loadSegmenterPrefs();
     _mdictManager = MDictManagerService();
     _dictAudioService = DictionaryAudioService(mdictManager: _mdictManager);
 
@@ -71,22 +79,75 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
   }
 
+  Future<void> _loadSegmenterPrefs() async {
+    final seg = await SegmenterSettingsDialog.load();
+    if (!mounted) return;
+    _segmenter = seg;
+    _redetectSegments();
+  }
+
+  /// 用当前断句参数对已加载音频重新检测 (只有真实响度包络才有意义)
+  void _redetectSegments() {
+    if (_track.peaksPerSecond <= 0) return;
+    setState(() {
+      _track = AudioTrack(
+        path: _track.path,
+        title: _track.title,
+        duration: _track.duration,
+        peaks: _track.peaks,
+        peaksPerSecond: _track.peaksPerSecond,
+        segments: _segmenter.detect(_track.peaks, _track.peaksPerSecond),
+      );
+    });
+  }
+
+  void _openSegmenterSettings() {
+    showSegmenterSettings(
+      context,
+      initial: _segmenter,
+      onChanged: (seg) {
+        _segmenter = seg;
+        _redetectSegments();
+      },
+    );
+  }
+
   Future<void> _pickAudioFile() async {
     final result = await FilePicker.platform.pickFiles(type: FileType.audio);
     if (result != null && result.files.single.path != null) {
       final path = result.files.single.path!;
       final name = result.files.single.name;
 
-      setState(() => _isLoading = true);
+      setState(() {
+        _isLoading = true;
+        _loadProgress = null;
+        _loadStage = '读取音频…';
+      });
       try {
         await _playerService.loadFile(path);
-        final peaks = await _waveformExtractor.extractPeaks(path);
+        if (mounted) setState(() => _loadStage = '解码波形…');
+        final wave = await _waveformExtractor.extract(path, onProgress: (p) {
+          if (mounted) setState(() => _loadProgress = p);
+        });
+        if (mounted) {
+          setState(() {
+            _loadStage = '分析断句…';
+            _loadProgress = null;
+          });
+        }
+        final peaksPerSecond = wave.peaksPerSecond;
+        // 只有真实响度包络才做断句检测，粗略波形里的静音没有意义
+        final segments = peaksPerSecond > 0
+            ? _segmenter.detect(wave.peaks, peaksPerSecond)
+            : const <SpeechSegment>[];
         setState(() {
           _track = AudioTrack(
             path: path,
             title: name,
             duration: _playerService.duration,
-            peaks: peaks,
+            peaks: wave.peaks,
+            peaksPerSecond: peaksPerSecond,
+            segments: segments,
           );
           _repeatController.clearSelection();
         });
@@ -141,9 +202,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            Text(
-              '${TimeRulerHelper.formatTime(_currentPos)} / ${TimeRulerHelper.formatTime(_track.duration)}',
-              style: const TextStyle(color: Colors.white60, fontSize: 11, fontFamily: 'monospace'),
+            InkWell(
+              onTap: _openSegmenterSettings,
+              child: const Row(
+                children: [
+                  Icon(Icons.tune, size: 16, color: Color(0xFF3AAFA9)),
+                  SizedBox(width: 4),
+                  Text('断句参数', style: TextStyle(color: Color(0xFF3AAFA9), fontSize: 12)),
+                ],
+              ),
             ),
           ] else ...[
             const SizedBox(width: 12),
@@ -177,7 +244,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Widget _buildTabButton({required int index, required String title}) {
     final isSelected = _selectedTabIndex == index;
     return InkWell(
-      onTap: () => setState(() => _selectedTabIndex = index),
+      onTap: () {
+        // 切到词典立即停止播放 (含跟读停顿中的倒计时)，避免和词典发音混在一起
+        if (index == 1 && _selectedTabIndex != 1) {
+          _repeatController.cancelPendingLoop();
+          _playerService.pause();
+        }
+        setState(() => _selectedTabIndex = index);
+      },
       borderRadius: BorderRadius.circular(4),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -203,7 +277,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       children: [
         // 上半部分：全宽波形与时间标尺视口
         Expanded(
-          flex: 52,
+          flex: 70,
           child: Container(
             decoration: const BoxDecoration(
               border: Border(
@@ -213,33 +287,39 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ),
             child: AudacityWaveformView(
               peaks: _track.peaks,
+              peaksPerSecond: _track.peaksPerSecond,
+              segments: _track.segments,
               totalDuration: _track.duration,
               currentPosition: _currentPos,
               repeatState: _repeatController.state,
               isPlaying: _isPlaying,
               gestureMode: _gestureMode,
+              onGestureModeChanged: (mode) => setState(() => _gestureMode = mode),
               onSeek: (pos) => _playerService.seek(pos),
               onRangeSelected: (p1, p2) => _repeatController.setSelectionRange(p1, p2),
               onPointAMoved: (pos) => _repeatController.markPointA(pos),
               onPointBMoved: (pos) => _repeatController.markPointB(pos),
+              onPlayPause: () => _isPlaying ? _playerService.pause() : _playerService.play(),
+              onRestart: () {
+                _playerService.seek(Duration.zero);
+                _playerService.play();
+              },
             ),
           ),
         ),
         // 下半部分：左右分栏控制区
         Expanded(
-          flex: 48,
+          flex: 30,
           child: Container(
             color: AudacityTheme.panelBackground,
             child: Row(
               children: [
                 // 左侧列：手势切换 + A-B 控制与微调
                 Expanded(
-                  flex: 48,
+                  flex: 33,
                   child: AbControlBar(
                     state: _repeatController.state,
                     currentPosition: _currentPos,
-                    gestureMode: _gestureMode,
-                    onGestureModeChanged: (mode) => setState(() => _gestureMode = mode),
                     onSetA: () => _repeatController.markPointA(_currentPos),
                     onSetB: () => _repeatController.markPointB(_currentPos),
                     onClear: () => _repeatController.clearSelection(),
@@ -249,7 +329,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ),
                 // 右侧列：精听参数调节 + 底部播放控制
                 Expanded(
-                  flex: 52,
+                  flex: 67,
                   child: Container(
                     decoration: const BoxDecoration(
                       border: Border(left: BorderSide(color: Color(0xFF1E1E1E), width: 1.5)),
@@ -270,12 +350,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             onLoopsChanged: (loops) => _repeatController.setRemainingLoops(loops),
                           ),
                           PlayerBottomBar(
-                            isPlaying: _isPlaying,
                             currentPosition: _currentPos,
                             totalDuration: _track.duration,
-                            onPlayPause: () => _isPlaying ? _playerService.pause() : _playerService.play(),
-                            onSeekBack5s: () => _playerService.seek(_currentPos - const Duration(seconds: 5)),
-                            onSeekForward5s: () => _playerService.seek(_currentPos + const Duration(seconds: 5)),
                             onSeek: (pos) => _playerService.seek(pos),
                           ),
                         ],
@@ -291,13 +367,66 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
+  Widget _buildLoading() {
+    return Center(
+      child: SizedBox(
+        width: 260,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _loadProgress != null ? '$_loadStage ${(_loadProgress! * 100).round()}%' : _loadStage,
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 10),
+            LinearProgressIndicator(
+              value: _loadProgress,
+              color: const Color(0xFF3AAFA9),
+              backgroundColor: const Color(0xFF2C2C2C),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 系统返回/边缘滑动：2 秒内连续两次才真正退出
+  void _handleBack() {
+    final now = DateTime.now();
+    if (_lastBackAt != null && now.difference(_lastBackAt!) < const Duration(seconds: 2)) {
+      SystemNavigator.pop();
+      return;
+    }
+    _lastBackAt = now;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('再滑一次退出'), duration: Duration(seconds: 2)));
+  }
+
   @override
   Widget build(BuildContext context) {
+    // 词典释义浮层打开时，返回键由浮层自己的 PopScope 先用来收起浮层，这里不再拦截
+    return ListenableBuilder(
+      listenable: _panelController,
+      builder: (context, _) {
+        final panelOpen = _panelController.openPackId != null;
+        return PopScope(
+          canPop: panelOpen,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && !panelOpen) _handleBack();
+          },
+          child: _buildScaffold(),
+        );
+      },
+    );
+  }
+
+  Widget _buildScaffold() {
     return Scaffold(
       backgroundColor: const Color(0xFF1E1E1E),
       body: SafeArea(
         child: _isLoading
-            ? const Center(child: CircularProgressIndicator(color: Color(0xFF3AAFA9)))
+            ? _buildLoading()
             : Column(
                 children: [
                   // 1. 顶部紧凑标题与标签切换栏 (高度 32dp)

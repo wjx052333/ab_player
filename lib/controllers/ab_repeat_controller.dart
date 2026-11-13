@@ -12,6 +12,7 @@ class AbRepeatController extends ChangeNotifier {
 
   Timer? _pauseTimer;
   bool _isHandlingLoop = false;
+  Duration _lastPosition = Duration.zero;
 
   AbRepeatController({
     required this.onSeekRequest,
@@ -21,11 +22,13 @@ class AbRepeatController extends ChangeNotifier {
 
   void markPointA(Duration pos) {
     _state = _state.setPointA(pos);
+    _jumpIntoSelectionIfBefore();
     notifyListeners();
   }
 
   void markPointB(Duration pos) {
     _state = _state.setPointB(pos);
+    _jumpIntoSelectionIfBefore();
     notifyListeners();
   }
 
@@ -35,13 +38,32 @@ class AbRepeatController extends ChangeNotifier {
       remainingLoops: _state.remainingLoops,
       playbackSpeed: _state.playbackSpeed,
     );
+    _jumpIntoSelectionIfBefore();
     notifyListeners();
+  }
+
+  /// 选区落在当前播放位置之后时立即跳到 A 点，不必等播放到 A 才开始复读
+  /// (选区在当前位置之前时，onPositionChanged 本来就会立刻回跳到 A)
+  void _jumpIntoSelectionIfBefore() {
+    if (!_state.isActive || _state.pointA == null) return;
+    final a = _state.pointA!;
+    if (_lastPosition >= a) return;
+    _lastPosition = a; // 先记下，避免拖动选区时重复 Seek
+    onSeekRequest(a);
   }
 
   void clearSelection() {
     _pauseTimer?.cancel();
     _isHandlingLoop = false;
     _state = _state.copyWith(clearPoints: true, isWaitingInterval: false);
+    notifyListeners();
+  }
+
+  /// 取消跟读停顿的倒计时，避免切走后计时器又把播放恢复 (不清除 A-B 点)
+  void cancelPendingLoop() {
+    _pauseTimer?.cancel();
+    _isHandlingLoop = false;
+    _state = _state.copyWith(isWaitingInterval: false);
     notifyListeners();
   }
 
@@ -79,6 +101,7 @@ class AbRepeatController extends ChangeNotifier {
 
   /// 由音频引擎在 positionStream 变化时回调
   void onPositionChanged(Duration currentPosition) {
+    _lastPosition = currentPosition;
     if (!_state.isActive || _isHandlingLoop || _state.pointA == null || _state.pointB == null) {
       return;
     }

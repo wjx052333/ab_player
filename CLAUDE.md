@@ -11,6 +11,7 @@ lib/
 ├── main.dart                               # 应用入口、全局主题与横屏强锁
 ├── models/
 │   ├── audio_track.dart                    # 音频音轨模型 (标题、时长、归一化波峰数组)
+│   ├── speech_segment.dart                 # 说话区间模型 (start/end)
 │   ├── repeat_state.dart                   # A-B 复读状态模型 (A/B 点、跟读停顿、循环次数、倍速)
 │   ├── waveform_gesture_mode.dart          # 触控手势模式枚举 (drag: 拖动浏览, select: 划选区间)
 │   └── dictionary/
@@ -19,7 +20,8 @@ lib/
 │       └── dict_word_detail.dart           # 词卡详情模型 (词形变化 exchange 解析、多行释义)
 ├── services/
 │   ├── audio_player_service.dart           # just_audio 播放引擎封装 (播放、暂停、精准 Seek、倍速)
-│   ├── waveform_extractor.dart             # 本地音频快速采样与波峰下采样算法
+│   ├── waveform_extractor.dart             # 波形提取：Android/iOS 用 just_waveform 原生解码出真实响度包络 (100点/秒)，其他平台退回字节抽样粗略波形
+│   ├── speech_segmenter.dart               # 断句检测：按响度包络+自适应阈值找出说话区间 (静音≥250ms 视为句间停顿)
 │   ├── dictionary_db_service.dart          # SQLite 查词服务 (前缀联想、中高考/四六级升学权重排序)
 │   ├── dictionary_audio_service.dart       # 4级发音调度服务 (MDD直读 -> 本地MP3 -> 有道API -> TTS)
 │   └── mdict/
@@ -40,7 +42,8 @@ lib/
     │   └── time_ruler_helper.dart          # 时间刻度步长自适应计算与毫秒格式化 (00:05.0)
     ├── controls/
     │   ├── ab_control_bar.dart             # 模式切换胶囊 + A-B 打点与 ±0.1s 步进微调
-    │   ├── study_tuning_bar.dart           # 紧凑型倍速 (0.8x~1.5x)、跟读停顿 (0~3s)、循环次数
+    │   ├── segmenter_settings_dialog.dart      # 断句参数浮层 (阈值/最短停顿/最短语音，持久化)
+│   ├── study_tuning_bar.dart           # 紧凑型倍速 (0.8x~1.5x)、跟读停顿 (0~3s)、循环次数
     │   └── player_bottom_bar.dart          # 紧凑型播放滑块与播放/暂停/快进退主控
     └── dictionary/
         ├── dictionary_screen.dart          # 词典横屏 35:65 双栏工作台主容器
@@ -66,19 +69,19 @@ lib/
 - **顶部 32dp 全局导航与状态栏**：
   - 常驻分段切换按钮：`[ 🎧 播放器 ]` ⟷ `[ 📖 词典 ]`（通过 `IndexedStack` 保持播放状态与音频解码存活）；
   - 词典 Tab 下展示基础词库连接状态、已挂载外部 MDX 词典套数徽章、词库管理与指定文件入口。
-- **52:48 播放器黄金比例**：
-  - 上半部（52% 高度）：全宽波形与标尺视口；
-  - 下半部（48% 高度）：左右双列（左列 A-B 与手势，右列精听参数与播放主控）。
+- **70:30 播放器比例**：
+  - 上半部（70% 高度）：全宽波形与标尺视口；
+  - 下半部（30% 高度）：左右双列 1:2（左列 1/3 宽为 A-B 打点与微调，右列 2/3 宽为精听参数与进度条）；播放/从头播放/缩放/手势切换均为波形图上的悬浮按钮。
 - **35:65 查词工作台双栏结构**：
   - 左侧检索栏（35% 宽）：常驻带清除按钮的防抖搜索框，前缀匹配升学高频词置顶；
   - 右侧横屏词卡（65% 宽）：
-    - 顶部 Header：26pt 粗体词名、英美音发音按钮、中高考/四六级/柯林斯徽章；
+    - 顶部 Header：26pt 粗体词名、英美音发音按钮、最低考点等级（中考<高考<四级<六级<考研<雅思<托福<GRE，只显示最低一项）+柯林斯星级；
     - 主体：ECDICT 核心释义与形态速查占满词卡；词典 Chip（`📘 牛津初阶`、`📙 朗文当代 6th` 等，当前词有收录带绿点、无收录置灰）在词典 Tab 的顶栏、`词库管理` 按钮左侧，词典多时可左右拖动，被截断的一侧会出现渐隐和「拖动查看更多」提示；点击 Chip 后词典释义从右侧滑出，与词卡同大地盖住整个词卡，再点同一 Chip / 关闭按钮 / 系统返回键收起。
 
 ### 2.2 触控手势模式切换（双态分工）
-`AbControlBar` 最左侧常驻切换胶囊：
-1. **`[✋ 拖动]`（默认模式）**：单指水平滑动直接平移波形，单指点击跳转 Seek；
-2. **`[✂️ 划选]`（选区模式）**：单指拖拽在波形上实时拉出半透明 A-B 复读区间；
+波形图左下角悬浮两枚小按钮（✋ 图标 + 「AB」文字）（与右下角播放/缩放键同高），当前模式高亮：
+1. **`✋ 拖动`（默认模式）**：单指水平滑动直接平移波形，单指点击跳转 Seek；
+2. **`AB 划选`（选区模式）**：单指拖拽在波形上实时拉出半透明 A-B 复读区间；
 3. **全局把手优先响应**：手指命中 `[A]` 或 `[B]` 把手热区时，直接拖拽微调起止点。
 
 ### 2.3 波形缩放、居中跟随与选区静止
@@ -86,6 +89,19 @@ lib/
 - **最小缩放边界（满屏即止）**：$\text{minPPS} = \text{width} / \text{totalDurationSeconds}$，全屏即止，杜绝波形压缩成一团；
 - **触碰避让与冷却**：手势触碰波形暂停居中跟随，松手 1.5 秒后自动恢复跟随；
 - **选区内免眩晕静止**：当 A-B 选区完全在当前屏幕视野内时，波形视口**锁定静止**，光标在选区内循环移动。
+
+### 2.3.1 断句可视化与吸附
+- **真实响度**：用 `just_waveform` 原生解码 MP3 等压缩格式，得到 10ms 一点的响度包络；绘制时按屏幕像素列取区间最大值，缩小后也不丢峰值。
+- **断句标注**：`SpeechSegmenter` 找出说话区间，波形上画淡青底色 + 首尾竖线 + 底部色条，无底色的暗区即句间停顿。仅真实包络做断句，粗略波形不检测。
+- **断句参数可调**：顶栏「断句参数」按钮（原右侧时间显示位置）打开浮层，可调静音阈值（占高响度比例，默认 12%）、最短停顿（默认 150ms）、最短语音（默认 150ms）；拖动即时重新断句，参数存 `SharedPreferences`。默认值依据 `L212026.mp3`（底噪较高）调出，原 6%/250ms 只能断出 3 段。离线调参脚本 `data_utils/segment_audio.py`（算法与 Dart 一致，需 `pip install miniaudio numpy`），可对任意 MP3 打印句子起止时间，改默认值时两边要同步。
+- **一键选句**：`AB 划选` 模式下点击某个句子，A-B 直接设为该句边界。
+- **边界吸附**：划选或拖 A/B 把手时，靠近句子起止点（≤10px，最多 300ms）自动吸附，避免截断单词。
+
+### 2.3.2 加载进度与退出确认
+- **加载等待界面**：选择音频后显示分阶段进度条（读取音频 → 解码波形 xx% → 分析断句）。
+- **默认缩放**：初始 30 像素/秒（最大 300，最小为刚好铺满视口）。
+- **切到词典立即停播**：切换到词典 Tab 时暂停播放，并取消跟读停顿倒计时，避免计时器稍后又恢复播放。
+- **双击返回才退出**：系统返回/边缘滑动首次只提示「再滑一次退出」，2 秒内再次才退出；词典释义浮层打开时，返回键仍只用来收起浮层。
 
 ### 2.4 A-B 复读状态机 (`AbRepeatController`)
 - **最小保护间隔**：A 点与 B 点强制满足 $T_A < T_B$，最小间隔 200ms；
@@ -147,8 +163,8 @@ lib/
   - **分层探测优先级**：
     1. 用户自定义路径（通过 UI 选取并由 `SharedPreferences` 持久化 `custom_ecdict_path`）；
     2. 桌面环境探测：相对开发路径 `data_download/...`；
-    3. 移动端/Android 规范探测：通过原生 `MethodChannel` (`StoragePermissionService`) 动态解析权威主下载目录 `Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)` 以及外置 SD 卡 `StorageManager.storageVolumes` 下的 `Download/` 目录；
-    4. 常见系统路径兜底：`/storage/emulated/0/Download`、`/sdcard/Download`；
+    3. 移动端/Android 规范探测：通过原生 `MethodChannel` (`StoragePermissionService`) 动态解析权威主下载目录 `Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)` 以及外置 SD 卡 `StorageManager.storageVolumes` 下的 `Download/` 目录，**并且只读其下的 `english/` 子目录**（`Download/english/`），不再扫描 Download 根目录，避免文件散放；
+    4. 常见系统路径兜底：`/storage/emulated/0/Download/english`、`/sdcard/Download/english`；
     5. 应用沙盒外部与内部文档目录：`getDownloadsDirectory()`、`getApplicationDocumentsDirectory()`、`getApplicationSupportDirectory()`。
 
 ### 3.5 4级发音调度管道 (`DictionaryAudioService`)
@@ -185,3 +201,20 @@ flutter test test/integration/dictionary_lookup_integration_test.dart
 # 本地调试运行 (支持真机/桌面热重载 'r')
 flutter run
 ```
+
+---
+
+## 5. 编辑文件注意事项：保持 LF 换行符
+
+仓库内文件均为 **LF** 换行（`git ls-files --eol` 显示 `i/lf w/lf`），且未配置 `.gitattributes`。在 Windows 上用脚本批量改文件时，换行符很容易被悄悄改成 CRLF，导致 `git diff` 把整个文件都标成改动、真实改动被淹没。
+
+- **首选 `Edit` / `Write` 工具改文件**，不要用脚本改源码；它们会保持原有换行符。
+- **必须用 Python 时**：Windows 下文本模式 `open(p, 'w')` 会把 `\n` 写成 `\r\n`。读写都要显式带 `newline=''`，或用二进制读写：
+  ```python
+  s = open(p, encoding='utf-8', newline='').read()
+  # ... 替换 ...
+  open(p, 'w', encoding='utf-8', newline='').write(s)
+  ```
+- **用 `sed -i` 替换文本**通常安全（不改换行符）；不要用 `sed 's/$/\r/'` 之类的命令。
+- **改完必须自检**：`git diff --stat` 里若某个文件改动行数远超实际修改量（几乎整文件都是增删），就是换行符被改了。修复方式：`sed -i 's/\r$//' <文件>` 转回 LF，再看 `git diff --stat` 恢复正常。
+- 新建文件同样使用 LF。

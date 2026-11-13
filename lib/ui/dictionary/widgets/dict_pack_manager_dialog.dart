@@ -169,7 +169,7 @@ class _DictPackManagerDialogState extends State<DictPackManagerDialog> {
                     const SizedBox(width: 8),
                     const Expanded(
                       child: Text(
-                        '缺少“所有文件访问权限”，无法自动读取公共 Download 目录中的词库。',
+                        '缺少“所有文件访问权限”，无法自动读取公共 Download/english 目录中的词库。',
                         style: TextStyle(color: Colors.orange, fontSize: 12),
                       ),
                     ),
@@ -218,7 +218,7 @@ class _DictPackManagerDialogState extends State<DictPackManagerDialog> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          widget.dbService.resolvedEcdictPath ?? '支持将数据库放至 Download/ 目录或点击右侧手动选取',
+                          widget.dbService.resolvedEcdictPath ?? '支持将数据库放至 Download/english/ 目录或点击右侧手动选取',
                           style: const TextStyle(color: Colors.white54, fontSize: 11),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -264,7 +264,7 @@ class _DictPackManagerDialogState extends State<DictPackManagerDialog> {
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     child: Center(
                       child: Text(
-                        '当前未挂载外部 MDX 词典\n可将牛津/朗文等放入公共 Download 目录，或点击下方添加',
+                        '当前未挂载外部 MDX 词典\n可将牛津/朗文等放入公共 Download/english 目录，或点击下方添加',
                         textAlign: TextAlign.center,
                         style: const TextStyle(color: Colors.white38, fontSize: 12, height: 1.5),
                       ),

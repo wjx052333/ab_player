@@ -29,18 +29,18 @@ void main() {
 
     // 验证核心组件均正常渲染
     expect(find.text('打开音频'), findsOneWidget);
-    expect(find.text('拖动'), findsOneWidget);
-    expect(find.text('划选'), findsOneWidget);
+    expect(find.byTooltip('拖动'), findsOneWidget);
+    expect(find.byTooltip('划选'), findsOneWidget);
     expect(find.text('设A点'), findsOneWidget);
     expect(find.text('设B点'), findsOneWidget);
     expect(find.text('清除'), findsOneWidget);
 
     // 测试点击切换到“划选”模式
-    await tester.tap(find.text('划选'));
+    await tester.tap(find.byTooltip('划选'));
     await tester.pump();
 
     // 测试点击切换回“拖动”模式
-    await tester.tap(find.text('拖动'));
+    await tester.tap(find.byTooltip('拖动'));
     await tester.pump();
 
     // 确保绝对没有任何 RenderFlex 溢出

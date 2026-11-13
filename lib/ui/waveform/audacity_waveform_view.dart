@@ -2,33 +2,45 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../models/repeat_state.dart';
+import '../../models/speech_segment.dart';
 import '../../models/waveform_gesture_mode.dart';
+import '../controls/mini_icon_button.dart';
 import 'audacity_waveform_painter.dart';
 
 class AudacityWaveformView extends StatefulWidget {
   final List<double> peaks;
+  final double peaksPerSecond;
+  final List<SpeechSegment> segments;
   final Duration totalDuration;
   final Duration currentPosition;
   final RepeatState repeatState;
   final bool isPlaying;
   final WaveformGestureMode gestureMode;
+  final ValueChanged<WaveformGestureMode> onGestureModeChanged;
   final Function(Duration) onSeek;
   final Function(Duration, Duration) onRangeSelected;
   final Function(Duration) onPointAMoved;
   final Function(Duration) onPointBMoved;
+  final VoidCallback onPlayPause;
+  final VoidCallback onRestart;
 
   const AudacityWaveformView({
     super.key,
     required this.peaks,
+    this.peaksPerSecond = 0,
+    this.segments = const [],
     required this.totalDuration,
     required this.currentPosition,
     required this.repeatState,
     required this.isPlaying,
     required this.gestureMode,
+    required this.onGestureModeChanged,
     required this.onSeek,
     required this.onRangeSelected,
     required this.onPointAMoved,
     required this.onPointBMoved,
+    required this.onPlayPause,
+    required this.onRestart,
   });
 
   @override
@@ -36,7 +48,7 @@ class AudacityWaveformView extends StatefulWidget {
 }
 
 class _AudacityWaveformViewState extends State<AudacityWaveformView> {
-  double _pixelsPerSecond = 50.0;
+  double _pixelsPerSecond = 30.0;
   double _scrollOffset = 0.0;
 
   double? _dragStartX;
@@ -137,6 +149,35 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
     return Duration(milliseconds: (seconds * 1000).toInt());
   }
 
+  SpeechSegment? _segmentAt(Duration t) {
+    for (final seg in widget.segments) {
+      if (seg.contains(t)) return seg;
+    }
+    return null;
+  }
+
+  /// 吸附距离：屏幕上 10px 对应的时长，但不超过 300ms
+  Duration get _snapRadius {
+    final ms = (10 / _pixelsPerSecond * 1000).clamp(0.0, 300.0);
+    return Duration(milliseconds: ms.round());
+  }
+
+  /// 靠近句子起止点时吸附过去，使切出的区间贴着断句、不截断单词
+  Duration _snapToBoundary(Duration t) {
+    Duration best = t;
+    var bestDist = _snapRadius;
+    for (final seg in widget.segments) {
+      for (final edge in [seg.start, seg.end]) {
+        final d = Duration(microseconds: (edge - t).inMicroseconds.abs());
+        if (d <= bestDist) {
+          best = edge;
+          bestDist = d;
+        }
+      }
+    }
+    return best;
+  }
+
   double _maxScroll(double width) {
     final totalWidth = (widget.totalDuration.inMilliseconds / 1000.0) * _pixelsPerSecond;
     return max(0.0, totalWidth - width);
@@ -162,7 +203,13 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
             GestureDetector(
               onTapUp: (details) {
                 final target = _xToDuration(details.localPosition.dx, width);
-                widget.onSeek(target);
+                // AB 划选模式下点中某个句子：直接把 A-B 设成该句边界
+                final seg = widget.gestureMode.isSelect ? _segmentAt(target) : null;
+                if (seg != null) {
+                  widget.onRangeSelected(seg.start, seg.end);
+                } else {
+                  widget.onSeek(target);
+                }
                 // 点击跳转后立即响应
                 _isUserInteracting = false;
                 _interactionCooldownTimer?.cancel();
@@ -194,11 +241,11 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
               onScaleUpdate: (details) {
                 // 1. 如果在拖动手柄 (A/B 把手微调优先级最高)
                 if (_activeHandle == 1) {
-                  final pos = _xToDuration(details.localFocalPoint.dx, width);
+                  final pos = _snapToBoundary(_xToDuration(details.localFocalPoint.dx, width));
                   widget.onPointAMoved(pos);
                   return;
                 } else if (_activeHandle == 2) {
-                  final pos = _xToDuration(details.localFocalPoint.dx, width);
+                  final pos = _snapToBoundary(_xToDuration(details.localFocalPoint.dx, width));
                   widget.onPointBMoved(pos);
                   return;
                 }
@@ -230,9 +277,9 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
                       _scrollOffset = ((_dragStartScrollOffset ?? _scrollOffset) - deltaX).clamp(0.0, _maxScroll(width));
                     });
                   } else {
-                    // ✂️ 划选模式：拉出 A-B 选区
-                    final p1 = _xToDuration(_dragStartX!, width);
-                    final p2 = _xToDuration(currentX, width);
+                    // AB 划选模式：拉出 A-B 选区
+                    final p1 = _snapToBoundary(_xToDuration(_dragStartX!, width));
+                    final p2 = _snapToBoundary(_xToDuration(currentX, width));
                     widget.onRangeSelected(p1, p2);
                   }
                 } else if (details.pointerCount == 2) {
@@ -262,6 +309,8 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
                 size: Size(width, constraints.maxHeight),
                 painter: AudacityWaveformPainter(
                   peaks: widget.peaks,
+                  peaksPerSecond: widget.peaksPerSecond,
+                  segments: widget.segments,
                   totalDuration: widget.totalDuration,
                   currentPosition: widget.currentPosition,
                   repeatState: widget.repeatState,
@@ -271,20 +320,51 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
               ),
             ),
 
-            // 悬浮缩放快捷按钮 (以光标为中心缩放，缩小到充满屏幕即止)
+            // 悬浮手势模式切换 (靠左，与右侧快捷按钮同高)
+            Positioned(
+              left: 12,
+              bottom: 8,
+              child: Row(
+                children: [
+                  MiniIconButton(
+                    icon: Icons.pan_tool_outlined,
+                    tooltip: '拖动',
+                    activeColor: widget.gestureMode.isDrag ? const Color(0xFF3AAFA9) : null,
+                    onPressed: () => widget.onGestureModeChanged(WaveformGestureMode.drag),
+                  ),
+                  const SizedBox(width: 6),
+                  MiniIconButton(
+                    label: 'AB',
+                    tooltip: '划选',
+                    activeColor: widget.gestureMode.isSelect ? const Color(0xFFF4D03F) : null,
+                    onPressed: () => widget.onGestureModeChanged(WaveformGestureMode.select),
+                  ),
+                ],
+              ),
+            ),
+
+            // 悬浮快捷按钮：播放/暂停、从头播放、缩放 (缩放以光标为中心，缩小到充满屏幕即止)
             Positioned(
               right: 12,
               bottom: 8,
               child: Row(
                 children: [
-                  _miniButton(
-                    Icons.zoom_in,
-                    canZoomIn ? () => _zoomAroundPlayhead(1.3, width) : null,
+                  MiniIconButton(
+                    icon: widget.isPlaying ? Icons.pause : Icons.play_arrow,
+                    tooltip: widget.isPlaying ? '暂停' : '播放',
+                    onPressed: widget.onPlayPause,
                   ),
                   const SizedBox(width: 6),
-                  _miniButton(
-                    Icons.zoom_out,
-                    canZoomOut ? () => _zoomAroundPlayhead(1 / 1.3, width) : null,
+                  MiniIconButton(icon: Icons.replay, tooltip: '从头播放', onPressed: widget.onRestart),
+                  const SizedBox(width: 14),
+                  MiniIconButton(
+                    icon: Icons.zoom_in,
+                    onPressed: canZoomIn ? () => _zoomAroundPlayhead(1.3, width) : null,
+                  ),
+                  const SizedBox(width: 6),
+                  MiniIconButton(
+                    icon: Icons.zoom_out,
+                    onPressed: canZoomOut ? () => _zoomAroundPlayhead(1 / 1.3, width) : null,
                   ),
                 ],
               ),
@@ -295,20 +375,4 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
     );
   }
 
-  Widget _miniButton(IconData icon, VoidCallback? onPressed) {
-    final enabled = onPressed != null;
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.black.withAlpha(enabled ? 160 : 70),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Colors.white12, width: 0.5),
-      ),
-      child: IconButton(
-        icon: Icon(icon, color: enabled ? Colors.white70 : Colors.white24, size: 18),
-        onPressed: onPressed,
-        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-        padding: EdgeInsets.zero,
-      ),
-    );
-  }
 }

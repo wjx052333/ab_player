@@ -36,6 +36,16 @@ class DictCardHeader extends StatelessWidget {
     }
   }
 
+  /// 考点标签由低到高；表头只显示其中最低的一级
+  static const _tagOrder = ['zk', 'gk', 'cet4', 'cet6', 'ky', 'ielts', 'toefl', 'gre'];
+
+  List<String> _lowestTag(List<String> tags) {
+    final known = tags.where((t) => _tagOrder.contains(t.toLowerCase())).toList();
+    if (known.isEmpty) return tags.take(1).toList();
+    known.sort((a, b) => _tagOrder.indexOf(a.toLowerCase()).compareTo(_tagOrder.indexOf(b.toLowerCase())));
+    return [known.first];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -91,7 +101,7 @@ class DictCardHeader extends StatelessWidget {
               spacing: 6,
               runSpacing: 4,
               children: [
-                ...detail.tags.map((tag) {
+                ..._lowestTag(detail.tags).map((tag) {
                   return Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(

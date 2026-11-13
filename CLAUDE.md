@@ -157,7 +157,8 @@ lib/
 ### 3.4 跨平台目录管理规范 (Android vs Windows/Desktop)
 为杜绝 Android 上因工作目录只读或权限不足导致的 `FileSystemException: Cannot create directory (errno = 13)`，项目中涉及文件存储与探测时严格遵循跨平台分层策略：
 - **音频下载缓存 (`english-sounds/`)**：
-  - **Android / iOS**：严禁硬编码相对路径，通过 `path_provider` 调用 `getApplicationSupportDirectory()`，存入应用专属沙盒路径（`.../app_flutter/english-sounds`），无需高危外部存储权限，系统安全可写且卸载时自动清理；异常时降级至 `Directory.systemTemp`；
+  - **Android**：优先 `Download/english/sounds/`（`StoragePermissionService.getPublicAppDirectories()`，与词库同一父目录；写入前做可写探测），无权限时退回应用沙盒；旧版沙盒缓存仍可读取；
+  - **iOS / Android 无权限降级**：严禁硬编码相对路径，通过 `path_provider` 调用 `getApplicationSupportDirectory()`，存入应用专属沙盒路径（`.../app_flutter/english-sounds`），无需高危外部存储权限，系统安全可写且卸载时自动清理；异常时降级至 `Directory.systemTemp`；
   - **Windows / Desktop**：优先探测项目工作区 `data_download/english-sounds`（便于本地开发与持久化检查），若不存在则使用系统文档目录 `getApplicationDocumentsDirectory()/english-sounds`。
 - **离线词典探测 (`ecdict-ultimate.db`, `.mdx`, `.mdd`)**：
   - **分层探测优先级**：
@@ -170,7 +171,7 @@ lib/
 ### 3.5 4级发音调度管道 (`DictionaryAudioService`)
 彻底杜绝手机文件系统中产生数万个散落 MP3 碎文件的弊端：
 1. **第 1 级（MDD 离线容器，优先推荐）**：优先从 `Sound_us_uk.mdd` 或词典自带 MDD 中获取美音/英音（支持 `\word.spx`, `\word_uk.spx`, `\word.mp3`），取出二进制音频流写入临时播放缓存播放；
-2. **第 2 级（本地散装 MP3 缓存）**：检测跨平台安全缓存目录下的 `${word}_${accent}.mp3`；
+2. **第 2 级（本地散装 MP3 缓存，Android 在 `Download/english/sounds/`）**：检测跨平台安全缓存目录下的 `${word}_${accent}.mp3`；
 3. **第 3 级（在线有道开放 API）**：若本地缺失且有网络，自动拉取有道音频并持久化保存到安全缓存目录；
 4. **第 4 级（系统 TTS 保底）**：断网且完全无离线资源时降级回退至 `flutter_tts` 本地语音合成。
 

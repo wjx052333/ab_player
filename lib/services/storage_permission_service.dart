@@ -32,36 +32,41 @@ class StoragePermissionService {
   /// 公共 Download 下存放词库/数据库的子目录名，避免把文件散放在 Download 根目录
   static const String appSubDir = 'english';
 
-  /// 获取跨机型兼容的全部潜在候选目录 (公共存储只认 Download/english 子目录)：
-  /// 1. 原生 API 返回的标准 Download 目录及外置 SD 卡中的 Download 目录，再拼上 /english
-  /// 2. 常见兼容路径软链接 (/storage/emulated/0/Download/english, /sdcard/Download/english)
-  /// 3. path_provider 的应用沙盒文档与支持目录
-  static Future<List<String>> getSearchDirectories() async {
+  /// Android 公共存储中的 Download/english 候选目录 (主存储在前，外置 SD 卡在后)；
+  /// 非 Android 平台返回空列表
+  static Future<List<String>> getPublicAppDirectories() async {
+    if (kIsWeb || !Platform.isAndroid) return [];
     final dirs = <String>{};
 
-    if (!kIsWeb && Platform.isAndroid) {
-      // 1. 调用原生 MethodChannel 解析真实系统目录
-      try {
-        final List<dynamic>? nativePaths =
-            await _channel.invokeMethod<List<dynamic>>('getPublicStoragePaths');
-        if (nativePaths != null) {
-          for (final p in nativePaths) {
-            // 原生返回的是 Download 目录本身，这里只取其下的 english 子目录
-            if (p is String && p.isNotEmpty && p.endsWith('Download')) {
-              dirs.add('$p/$appSubDir');
-            }
+    // 1. 调用原生 MethodChannel 解析真实系统目录
+    try {
+      final List<dynamic>? nativePaths =
+          await _channel.invokeMethod<List<dynamic>>('getPublicStoragePaths');
+      if (nativePaths != null) {
+        for (final p in nativePaths) {
+          // 原生返回的是 Download 目录本身，这里只取其下的 english 子目录
+          if (p is String && p.isNotEmpty && p.endsWith('Download')) {
+            dirs.add('$p/$appSubDir');
           }
         }
-      } catch (e) {
-        debugPrint('getPublicStoragePaths error: $e');
       }
-
-      // 2. 静态常见路径兜底兼容
-      dirs.add('/storage/emulated/0/Download/$appSubDir');
-      dirs.add('/sdcard/Download/$appSubDir');
+    } catch (e) {
+      debugPrint('getPublicStoragePaths error: $e');
     }
 
-    // 3. path_provider 标准路径（跨平台/沙盒兼容）
+    // 2. 静态常见路径兜底兼容
+    dirs.add('/storage/emulated/0/Download/$appSubDir');
+    dirs.add('/sdcard/Download/$appSubDir');
+    return dirs.toList();
+  }
+
+  /// 获取跨机型兼容的全部潜在候选目录 (公共存储只认 Download/english 子目录)：
+  /// 1. [getPublicAppDirectories] 的 Download/english 目录
+  /// 2. path_provider 的下载目录/english、应用沙盒文档与支持目录
+  static Future<List<String>> getSearchDirectories() async {
+    final dirs = <String>{...await getPublicAppDirectories()};
+
+    // path_provider 标准路径（跨平台/沙盒兼容）
     try {
       final downloads = await getDownloadsDirectory();
       if (downloads != null) dirs.add('${downloads.path}/$appSubDir');

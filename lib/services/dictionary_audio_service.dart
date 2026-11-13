@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
+import 'storage_permission_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'mdict/mdict_manager_service.dart';
@@ -44,6 +45,14 @@ class DictionaryAudioService {
       }
       _resolvedSoundsDir = dir.path;
       return _resolvedSoundsDir!;
+    }
+
+    // Android: 优先放公共 Download/english/sounds (与词库同一父目录，便于管理)，
+    // 没有写权限或不可写时退回应用沙盒
+    final publicDir = await _tryPublicSoundsDir();
+    if (publicDir != null) {
+      _resolvedSoundsDir = publicDir;
+      return publicDir;
     }
 
     // Platform-specific logic:
@@ -97,6 +106,34 @@ class DictionaryAudioService {
     }
   }
 
+  /// 逐个尝试 Download/english/sounds，返回第一个真正可写的目录；非 Android 返回 null
+  Future<String?> _tryPublicSoundsDir() async {
+    for (final base in await StoragePermissionService.getPublicAppDirectories()) {
+      try {
+        final dir = Directory('$base/sounds');
+        if (!dir.existsSync()) dir.createSync(recursive: true);
+        final probe = File('${dir.path}/.write_test');
+        probe.writeAsStringSync('ok', flush: true);
+        probe.deleteSync();
+        return dir.path;
+      } catch (_) {
+        // 无权限或目录不存在，试下一个
+      }
+    }
+    return null;
+  }
+
+  /// 旧版本缓存在应用沙盒 english-sounds 里，升级后仍要能读到
+  Future<File?> _legacyCachedFile(String fileName) async {
+    if (kIsWeb || !(Platform.isAndroid || Platform.isIOS)) return null;
+    try {
+      final supportDir = await getApplicationSupportDirectory();
+      final f = File('${supportDir.path}/english-sounds/$fileName');
+      if (f.existsSync() && f.lengthSync() > 0) return f;
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> _initTts() async {
     try {
       await _flutterTts.setLanguage('en-US');
@@ -121,7 +158,7 @@ class DictionaryAudioService {
     if (file.existsSync() && file.lengthSync() > 0) {
       return file.path;
     }
-    return null;
+    return (await _legacyCachedFile(ext))?.path;
   }
 
   /// 4-tier pronunciation pipeline:

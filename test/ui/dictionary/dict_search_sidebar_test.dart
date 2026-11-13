@@ -45,4 +45,34 @@ void main() {
     await tester.tap(find.text('text'));
     expect(selectedWord, 'text');
   });
+
+  testWidgets('DictSearchSidebar does not overflow with very long word and phonetic', (tester) async {
+    tester.view.physicalSize = const Size(260, 600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    const words = [
+      DictWordSummary(
+        word: 'pneumonoultramicroscopicsilicovolcanoconiosis',
+        phonetic: 'njuːmənəʊʌltrəmaɪkrəˈskɒpɪksɪlɪkəʊvɒlˌkeɪnəʊˌkɒnɪˈəʊsɪs',
+        rawTranslation: 'n. 肺尘埃沉着病',
+      ),
+      DictWordSummary(word: 'a-very-long-word-without-phonetic-in-narrow-sidebar'),
+    ];
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: DictSearchSidebar(
+          words: words,
+          selectedWord: '',
+          onQueryChanged: (_) {},
+          onWordSelected: (_) {},
+          onClearQuery: () {},
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+  });
 }

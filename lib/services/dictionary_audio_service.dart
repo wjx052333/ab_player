@@ -197,6 +197,43 @@ class DictionaryAudioService {
     await speakText(safeWord);
   }
 
+  /// Play a `sound://` resource by its exact path inside the dictionary's MDD.
+  /// Returns false when the resource is missing or cannot be played, so the
+  /// caller can fall back to word-based playback.
+  Future<bool> playResource(String path) async {
+    final manager = mdictManager;
+    if (manager == null) return false;
+    try {
+      final bytes = await manager.getResourceBytes(path);
+      if (bytes == null) return false;
+      final isOgg = bytes.length >= 4 &&
+          bytes[0] == 0x4F && bytes[1] == 0x67 && bytes[2] == 0x67 && bytes[3] == 0x53;
+      final ext = isOgg ? 'spx' : 'mp3';
+      final name = path.replaceAll(RegExp(r'[^A-Za-z0-9]'), '_');
+      final file = File('${Directory.systemTemp.path}/mdd_res_$name.$ext');
+      await file.writeAsBytes(bytes, flush: true);
+      await _audioPlayer.stop();
+      await _audioPlayer.setFilePath(file.path);
+      await _audioPlayer.play();
+      return true;
+    } catch (e) {
+      debugPrint('MDD resource play error: $e');
+      return false;
+    }
+  }
+
+  /// Whether a recorded (non-TTS) pronunciation is available offline: the MDD
+  /// sound bank or the local cache.
+  Future<bool> hasHumanAudio(String word, {String accent = 'us'}) async {
+    final w = word.trim();
+    if (w.isEmpty) return false;
+    try {
+      final bytes = await mdictManager?.getAudioBytes(w, accent: accent);
+      if (bytes != null && bytes.isNotEmpty) return true;
+    } catch (_) {}
+    return await getLocalAudioPath(w, accent: accent) != null;
+  }
+
   Future<void> speakText(String text) async {
     try {
       await _flutterTts.stop();

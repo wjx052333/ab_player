@@ -41,6 +41,64 @@ void main() {
     expect(find.text('UK 🔊'), findsOneWidget);
   });
 
+  testWidgets('DictCardHeader shows only a TTS chip when no recorded audio exists', (tester) async {
+    var tts = 0;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: DictCardHeader(
+          detail: sampleDetail,
+          hasUsAudio: false,
+          hasUkAudio: false,
+          onPlayTts: () => tts++,
+          onPlayUs: () {},
+          onPlayUk: () {},
+        ),
+      ),
+    ));
+
+    expect(find.text('US 🔊'), findsNothing);
+    expect(find.text('UK 🔊'), findsNothing);
+    await tester.tap(find.text('TTS 🔊'));
+    expect(tts, 1);
+  });
+
+  testWidgets('DictCardHeader keeps a long word on one line while the right side has room', (tester) async {
+    tester.view.physicalSize = const Size(900, 400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    Future<double> headerHeight(String word) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: DictCardHeader(
+              detail: DictWordDetail(
+                word: word,
+                phonetic: '',
+                rawTranslation: '',
+                definition: '',
+                tagString: 'zk',
+                collins: 0,
+                oxford: 0,
+                exchangeString: '',
+                examples: const [],
+              ),
+              onPlayUs: () {},
+              onPlayUk: () {},
+            ),
+          ),
+        ),
+      ));
+      return tester.getSize(find.byType(DictCardHeader)).height;
+    }
+
+    final short = await headerHeight('without a bean');
+    final long = await headerHeight('without a blink of qualm');
+    expect(long, short, reason: 'long word wrapped although the card is wide enough');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('DictMeaningColumn renders translations and inflections', (tester) async {
     await tester.pumpWidget(const MaterialApp(
       home: Scaffold(
@@ -69,5 +127,24 @@ void main() {
     expect(find.text('临床试验。'), findsOneWidget);
     expect(find.text('📘 牛津初阶例句'), findsOneWidget);
     expect(find.text('📙 朗文当代例句'), findsOneWidget);
+  });
+
+  testWidgets('DictCardHeader does not overflow at narrow landscape card width', (tester) async {
+    tester.view.physicalSize = const Size(404, 300);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: DictCardHeader(
+          detail: sampleDetail,
+          onPlayUs: () {},
+          onPlayUk: () {},
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
   });
 }

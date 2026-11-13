@@ -194,6 +194,18 @@ class MDictManagerService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Look up a raw resource (e.g. `hwd/ame/1/test1.mp3`) by its path inside the
+  /// companion .mdd of any active pack, falling back to the dedicated sound bank.
+  Future<Uint8List?> getResourceBytes(String path) async {
+    for (final pack in activePacks) {
+      if (pack.mddReader == null) continue;
+      final bytes = await pack.lookupResource(path);
+      if (bytes != null && bytes.isNotEmpty) return bytes;
+    }
+    final bytes = await _dedicatedAudioMdd?.lookupResource(path);
+    return (bytes != null && bytes.isNotEmpty) ? bytes : null;
+  }
+
   /// Look up audio pronunciation bytes for a word from dedicated sound bank or active companion MDDs.
   Future<Uint8List?> getAudioBytes(String word, {String accent = 'us'}) async {
     final safeWord = word.trim().toLowerCase();

@@ -13,6 +13,7 @@ class MDictDictionaryPack {
   final String? mddPath;
   final String? cssPath;
   final String? customCss;
+  final String? customJs;
   final int totalEntries;
 
   final MDictReader mdxReader;
@@ -26,6 +27,7 @@ class MDictDictionaryPack {
     this.mddPath,
     this.cssPath,
     this.customCss,
+    this.customJs,
     required this.totalEntries,
     required this.mdxReader,
     this.mddReader,
@@ -57,6 +59,14 @@ class MDictDictionaryPack {
       } catch (_) {}
     }
 
+    String? jsContent;
+    final resolvedJsPath = _findCompanionFile(mdxPath, '.js');
+    if (resolvedJsPath != null) {
+      try {
+        jsContent = await File(resolvedJsPath).readAsString();
+      } catch (_) {}
+    }
+
     final id = File(mdxPath).uri.pathSegments.last.replaceAll('.mdx', '');
     String title = customTitle ?? mdxReader.header.title.trim();
     if (title.isEmpty) {
@@ -70,6 +80,7 @@ class MDictDictionaryPack {
       mddPath: resolvedMddPath,
       cssPath: resolvedCssPath,
       customCss: cssContent,
+      customJs: jsContent,
       totalEntries: mdxReader.numEntries,
       mdxReader: mdxReader,
       mddReader: mddReader,

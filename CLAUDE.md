@@ -23,6 +23,7 @@ lib/
 │   ├── dictionary_db_service.dart          # SQLite 查词服务 (前缀联想、中高考/四六级升学权重排序)
 │   ├── dictionary_audio_service.dart       # 4级发音调度服务 (MDD直读 -> 本地MP3 -> 有道API -> TTS)
 │   └── mdict/
+│       ├── mdict_html_page_builder.dart    # 将词条 HTML 拼成自包含页面 (内联 .css/.js、MDD 图片转 data URI、暗黑覆盖样式)
 │       ├── mdict_crypto.dart               # 纯 Dart RIPEMD-128 与 MDict fastDecrypt 密钥解密算法
 │       ├── mdict_header.dart               # MDDict XML 头部解析模型
 │       ├── mdict_reader.dart               # 核心纯 Dart MDX/MDD 二进制 RandomAccess 寻道与块解压引擎
@@ -46,8 +47,10 @@ lib/
         └── widgets/
             ├── dict_search_sidebar.dart    # 35% 检索侧栏 (200ms 防抖搜索框 + 升学置顶联想列表)
             ├── dict_card_header.dart       # 词卡头部 (大词名、音标、US/UK 发音胶囊、考点彩色徽章、星级)
-            ├── dict_meaning_column.dart    # 45% 左子列速查 (中文核心释义词性归纳、词形变形徽章、英文释义)
-            ├── dict_tabs_column.dart       # 55% 右子列多词典 Tab (动态 TabBar + HTML 富文本 + CSS 样式渲染)
+            ├── dict_meaning_column.dart    # ECDICT 速查 (中文核心释义词性归纳、词形变形徽章、英文释义)
+            ├── dict_pack_chip_bar.dart     # 顶栏词典 Chip 条 (横向可拖动，溢出时显示「拖动查看更多」提示) + DictPanelController
+            ├── dict_pack_panel_host.dart   # 点击 Chip 后从右侧滑出的词典释义浮层 (与词卡同大，覆盖整个词卡)
+            ├── mdict_web_view.dart         # WebView 渲染单个 MDX 词条 (拦截 sound:// 与 entry://)
             ├── dict_examples_column.dart   # 权威例句分组卡片 (牛津/朗文例句与关键词高亮)
             └── dict_pack_manager_dialog.dart# 词典管理对话框 (启停开关、拖拽排序、外部 .mdx 文件挂载)
 ```
@@ -70,7 +73,7 @@ lib/
   - 左侧检索栏（35% 宽）：常驻带清除按钮的防抖搜索框，前缀匹配升学高频词置顶；
   - 右侧横屏词卡（65% 宽）：
     - 顶部 Header：26pt 粗体词名、英美音发音按钮、中高考/四六级/柯林斯徽章；
-    - 双子列主体：**左子列（45%）** 为 ECDICT 核心释义与形态速查；**右子列（55%）** 为动态多词典 Tab 页。
+    - 主体：ECDICT 核心释义与形态速查占满词卡；词典 Chip（`📘 牛津初阶`、`📙 朗文当代 6th` 等，当前词有收录带绿点、无收录置灰）在词典 Tab 的顶栏、`词库管理` 按钮左侧，词典多时可左右拖动，被截断的一侧会出现渐隐和「拖动查看更多」提示；点击 Chip 后词典释义从右侧滑出，与词卡同大地盖住整个词卡，再点同一 Chip / 关闭按钮 / 系统返回键收起。
 
 ### 2.2 触控手势模式切换（双态分工）
 `AbControlBar` 最左侧常驻切换胶囊：
@@ -110,9 +113,30 @@ lib/
 ### 3.3 可扩展多词典 Tab 架构 (`MDictManagerService`)
 - **开箱即用自动挂载**：启动自动探测 `data_download/` 目录下的词典（如 `oxfordPrimary.mdx`、`Longman...mdx`、`Sound_us_uk.mdd`）；
 - **用户动态热插拔**：用户可通过查词工作台顶栏的 `[ 词库管理 ]`，点击 `[+ 添加 MDX/MDD 词典文件]`（通过 `file_picker`）随时挂载新词典（如 Oxford 10th、Collins 等）；
-- **动态新增 Tab**：右子列 Tab 栏根据当前启用的词典包动态渲染 Tab 项（如 `📘 牛津初阶`、`📙 朗文当代 6th`），并支持拖拽调整 Tab 左右顺序；
+- **动态新增 Chip**：顶栏 Chip 条根据当前启用的词典包动态渲染，顺序与词库管理中的拖拽排序一致；
 - **持久化记录**：使用 `SharedPreferences` 保存外挂词典路径和启用状态，重启自动恢复；
-- **HTML 富文本与 CSS 注入**：基于 `flutter_widget_from_html` 呈现高保真词典原版排版，自动注入词典专属 `.css` 并适配暗黑主题；拦截 `sound://` 协议播放音频，拦截 `entry://` 协议实现单词联动跳转。
+- **WebView 渲染**：词条用 `webview_flutter` 渲染，`MDictHtmlPageBuilder` 把词典自带的 `.css`、`.js` 内联进页面（朗文的展开/收起、弹出菜单依赖其 JS），`.mdd` 里的图片转 data URI，再叠加暗黑主题覆盖样式。不能改回 `flutter_widget_from_html`：它不解析 `<style>` 样式表也不执行 JS，朗文会渲染成一团。
+- **链接拦截**：`sound://` 先按 MDD 里的精确路径播放（`DictionaryAudioService.playResource`，如朗文 `hwd/ame/1/test1.mp3`），找不到再退回按单词播放；`entry://` 单词链接联动检索，`entry://#锚点` 在页内滚动。
+
+#### 3.3.1 在 PC 上复现 / 排查词典渲染问题
+`webview_flutter` 没有 Windows 桌面实现，且本项目没有 `windows/` 平台，所以 App 在 PC 上跑不起来。排查渲染问题时用「导出页面 + 无头 Chrome 截图」，不需要真机：
+
+1. 导出 App 实际交给 WebView 的页面（读本地 `data_download/` 里的 `.mdx/.mdd`，缺文件时测试自动跳过）：
+   ```bash
+   flutter test test/render/longman_page_export_test.dart   # 生成 build/render/longman_page.html
+   ```
+   想换词 / 换词典，改该测试里的 `lookupDefinition('test')` 与 `_base` 路径。
+2. 用无头 Chrome 截图（Windows 路径示例，窗口尺寸按手机横屏词典面板宽度约 500 设置）：
+   ```bash
+   "/c/Program Files/Google/Chrome/Application/chrome.exe" --headless=new --disable-gpu --hide-scrollbars \
+     --window-size=500,1400 --screenshot="C:\temp\english\build\render\longman_after.png" \
+     "file:///C:/temp/english/build/render/longman_page.html"
+   ```
+3. 看 `build/render/longman_after.png`。截图是静态的，看不到点击交互（展开/收起、弹出菜单）：这类用 Chrome 直接打开 `longman_page.html` 手动点；真机上的最终表现仍以 `flutter run` 为准。
+4. 对照基线：`flutter test test/render/longman_render_test.dart` 会按旧方案（`flutter_widget_from_html`）渲染并输出 `build/render/longman_before.png`，用来说明为什么不能退回去。
+5. 排查要点：先看导出的 HTML 里 CSS/JS/图片是否已内联（页面构建器的测试断言了这三点）；样式不对时先在 Chrome 里确认是词典自身 CSS 还是 `darkOverrideCss` 覆盖导致。
+
+`build/` 已在 `.gitignore` 中，截图与导出页面不会入库。
 
 ### 3.4 跨平台目录管理规范 (Android vs Windows/Desktop)
 为杜绝 Android 上因工作目录只读或权限不足导致的 `FileSystemException: Cannot create directory (errno = 13)`，项目中涉及文件存储与探测时严格遵循跨平台分层策略：
@@ -147,14 +171,15 @@ flutter pub get
 # 静态代码检查 (严格确保 0 errors, 0 warnings)
 flutter analyze
 
-# 运行全量测试套件 (包含播放器控制、波形采样、ECDICT 搜索、MDict 纯 Dart 引擎与多 Tab UI 测试)
+# 运行全量测试套件 (包含播放器控制、波形采样、ECDICT 搜索、MDict 纯 Dart 引擎与词典浮层 UI 测试)
 flutter test
 
 # 单独运行特定测试文件
 flutter test test/widget_test.dart
 flutter test test/services/mdict_reader_test.dart
 flutter test test/services/mdict_manager_service_test.dart
-flutter test test/ui/dictionary/dict_tabs_column_test.dart
+flutter test test/ui/dictionary/dict_pack_panel_host_test.dart
+flutter test test/ui/dictionary/dict_pack_manager_dialog_test.dart   # 含横屏矮屏 overflow 回归
 flutter test test/integration/dictionary_lookup_integration_test.dart
 
 # 本地调试运行 (支持真机/桌面热重载 'r')

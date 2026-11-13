@@ -13,6 +13,7 @@ import 'controls/ab_control_bar.dart';
 import 'controls/player_bottom_bar.dart';
 import 'controls/study_tuning_bar.dart';
 import 'dictionary/dictionary_screen.dart';
+import 'dictionary/widgets/dict_pack_chip_bar.dart';
 import 'waveform/audacity_waveform_view.dart';
 import 'waveform/time_ruler_helper.dart';
 
@@ -27,7 +28,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final AudioPlayerService _playerService = AudioPlayerService();
   final WaveformExtractor _waveformExtractor = WaveformExtractor();
   final DictionaryDbService _dictDbService = DictionaryDbService();
+  final GlobalKey<DictionaryScreenState> _dictScreenKey = GlobalKey<DictionaryScreenState>();
   late final MDictManagerService _mdictManager;
+  final DictPanelController _panelController = DictPanelController();
   late final DictionaryAudioService _dictAudioService;
   late final AbRepeatController _repeatController;
 
@@ -99,6 +102,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _repeatController.dispose();
     _dictDbService.dispose();
     _mdictManager.dispose();
+    _panelController.dispose();
     _dictAudioService.dispose();
     super.dispose();
   }
@@ -142,24 +146,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
               style: const TextStyle(color: Colors.white60, fontSize: 11, fontFamily: 'monospace'),
             ),
           ] else ...[
+            const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                _dictDbService.isReady
-                    ? '查词引擎: 已连接 ecdict-ultimate.db + 权威 MDX 词库群'
-                    : '查词引擎: 准备就绪',
-                style: const TextStyle(color: Colors.white60, fontSize: 11),
-                overflow: TextOverflow.ellipsis,
+              child: DictPackChipBar(
+                managerService: _mdictManager,
+                controller: _panelController,
               ),
             ),
+            const SizedBox(width: 8),
             if (_isPlaying) ...[
               const Icon(Icons.volume_up, size: 14, color: Color(0xFF3AAFA9)),
-              const SizedBox(width: 4),
-              Text(
-                '音频播放中: ${_track.title}',
-                style: const TextStyle(color: Color(0xFF3AAFA9), fontSize: 11),
-                overflow: TextOverflow.ellipsis,
-              ),
+              const SizedBox(width: 8),
             ],
+            InkWell(
+              onTap: () => _dictScreenKey.currentState?.openPackManager(),
+              child: const Row(
+                children: [
+                  Icon(Icons.settings, size: 16, color: Color(0xFF3AAFA9)),
+                  SizedBox(width: 4),
+                  Text('词库管理', style: TextStyle(color: Color(0xFF3AAFA9), fontSize: 12)),
+                ],
+              ),
+            ),
           ],
         ],
       ),
@@ -302,9 +310,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       children: [
                         _buildPlayerBody(),
                         DictionaryScreen(
+                          key: _dictScreenKey,
                           dbService: _dictDbService,
                           audioService: _dictAudioService,
                           mdictManager: _mdictManager,
+                          panelController: _panelController,
                         ),
                       ],
                     ),

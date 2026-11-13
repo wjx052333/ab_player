@@ -117,22 +117,30 @@ class _DictSearchSidebarState extends State<DictSearchSidebar> {
                             children: [
                               Row(
                                 children: [
-                                  Text(
-                                    item.word,
-                                    style: TextStyle(
-                                      color: isSelected ? Colors.white : const Color(0xFFE0E0E0),
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
+                                  Flexible(
+                                    child: Text(
+                                      item.word,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: isSelected ? Colors.white : const Color(0xFFE0E0E0),
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: 8),
                                   if (item.phonetic.isNotEmpty)
-                                    Text(
-                                      '/${item.phonetic}/',
-                                      style: TextStyle(
-                                        color: isSelected ? const Color(0xFF3AAFA9) : Colors.white38,
-                                        fontSize: 11,
-                                        fontFamily: 'monospace',
+                                    Flexible(
+                                      child: Text(
+                                        '/${item.phonetic}/',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: isSelected ? const Color(0xFF3AAFA9) : Colors.white38,
+                                          fontSize: 11,
+                                          fontFamily: 'monospace',
+                                        ),
                                       ),
                                     ),
                                 ],

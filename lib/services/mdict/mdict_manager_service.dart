@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../storage_permission_service.dart';
 import 'mdict_dictionary_pack.dart';
 import 'mdict_reader.dart';
 
@@ -88,25 +88,18 @@ class MDictManagerService extends ChangeNotifier {
       }
     }
 
-    // 2. Android / System downloads directory
+    // 2. Android & cross-platform: Search canonical public Download and storage directories
     try {
-      final downloadDir = await getDownloadsDirectory();
-      if (downloadDir != null) {
+      final searchDirs = await StoragePermissionService.getSearchDirectories();
+      for (final dirPath in searchDirs) {
         for (final rel in relativeSubpaths) {
-          results.add(File('${downloadDir.path}/$rel'));
-          results.add(File('${downloadDir.path}/${rel.split("/").last}'));
+          results.add(File('$dirPath/$rel'));
+          results.add(File('$dirPath/${rel.split("/").last}'));
         }
       }
-    } catch (_) {}
-
-    // 3. Android / App documents directory
-    try {
-      final docDir = await getApplicationDocumentsDirectory();
-      for (final rel in relativeSubpaths) {
-        results.add(File('${docDir.path}/$rel'));
-        results.add(File('${docDir.path}/${rel.split("/").last}'));
-      }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Error searching candidate files in MDictManagerService: $e');
+    }
 
     return results;
   }

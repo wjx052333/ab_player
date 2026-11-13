@@ -1,10 +1,11 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqlite3/sqlite3.dart';
 import '../models/dictionary/dict_example.dart';
 import '../models/dictionary/dict_word_detail.dart';
 import '../models/dictionary/dict_word_summary.dart';
+import 'storage_permission_service.dart';
 
 class DictionaryDbService {
   Database? _ecdictDb;
@@ -16,30 +17,48 @@ class DictionaryDbService {
   String? get resolvedEcdictPath => _resolvedEcdictPath;
   String? get resolvedExtraPath => _resolvedExtraPath;
 
+  static const String _prefKeyCustomEcdict = 'custom_ecdict_path';
+  static const String _prefKeyCustomExtra = 'custom_extra_path';
+
   Future<bool> initialize({
     String? customEcdictPath,
     String? customExtraPath,
   }) async {
     dispose();
 
-    final ecdictFile = await _resolveFile(customEcdictPath, 'ecdict-ultimate.db');
+    SharedPreferences? prefs;
+    try {
+      prefs = await SharedPreferences.getInstance();
+    } catch (_) {}
+
+    final targetEcdict = customEcdictPath ?? prefs?.getString(_prefKeyCustomEcdict);
+    final targetExtra = customExtraPath ?? prefs?.getString(_prefKeyCustomExtra);
+
+    final ecdictFile = await _resolveFile(targetEcdict, 'ecdict-ultimate.db');
     if (ecdictFile != null && ecdictFile.existsSync()) {
       _resolvedEcdictPath = ecdictFile.path;
       _ecdictDb = sqlite3.open(ecdictFile.path, mode: OpenMode.readOnly);
+      if (prefs != null) {
+        await prefs.setString(_prefKeyCustomEcdict, ecdictFile.path);
+      }
     }
 
-    final extraFile = await _resolveFile(customExtraPath, 'dict_extra.db');
+    final extraFile = await _resolveFile(targetExtra, 'dict_extra.db');
     if (extraFile != null && extraFile.existsSync()) {
       _resolvedExtraPath = extraFile.path;
       _extraDb = sqlite3.open(extraFile.path, mode: OpenMode.readOnly);
+      if (prefs != null) {
+        await prefs.setString(_prefKeyCustomExtra, extraFile.path);
+      }
     }
 
     return isReady;
   }
 
-  Future<File?> _resolveFile(String? customPath, String defaultFileName) async {
-    if (customPath != null && customPath.isNotEmpty) {
-      final f = File(customPath);
+  Future<File?> _resolveFile(String? preferredPath, String defaultFileName) async {
+    // 0. Preferred / previously selected file
+    if (preferredPath != null && preferredPath.isNotEmpty) {
+      final f = File(preferredPath);
       if (f.existsSync()) return f;
     }
 
@@ -49,22 +68,16 @@ class DictionaryDbService {
       if (relFile.existsSync()) return relFile;
     }
 
-    // 2. Android / iOS & cross-platform: system downloads & documents directory
+    // 2. Android & cross-platform: Scan canonical public download and storage directories
     try {
-      final downloadsDir = await getDownloadsDirectory();
-      if (downloadsDir != null) {
-        final f = File('${downloadsDir.path}/$defaultFileName');
+      final searchDirs = await StoragePermissionService.getSearchDirectories();
+      for (final dirPath in searchDirs) {
+        final f = File('$dirPath/$defaultFileName');
         if (f.existsSync()) return f;
       }
-
-      final docDir = await getApplicationDocumentsDirectory();
-      final f2 = File('${docDir.path}/$defaultFileName');
-      if (f2.existsSync()) return f2;
-
-      final supportDir = await getApplicationSupportDirectory();
-      final f3 = File('${supportDir.path}/$defaultFileName');
-      if (f3.existsSync()) return f3;
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Error searching candidate directories in DictionaryDbService: $e');
+    }
 
     return null;
   }
@@ -109,73 +122,72 @@ class DictionaryDbService {
         );
       }).toList();
     } catch (e) {
-      debugPrint('searchWords error: $e');
+      debugPrint('Dictionary search error: $e');
       return [];
     }
   }
 
   Future<DictWordDetail?> getWordDetail(String word) async {
-    final ecdict = _ecdictDb;
-    if (ecdict == null) return null;
+    final db = _ecdictDb;
+    if (db == null) return null;
 
-    final trimmed = word.trim();
-    if (trimmed.isEmpty) return null;
+    final q = word.trim();
+    if (q.isEmpty) return null;
 
     try {
-      final sql = '''
-        SELECT word, phonetic, translation, definition, tag, collins, oxford, exchange
-        FROM stardict
-        WHERE word = ? COLLATE NOCASE
-        LIMIT 1;
-      ''';
+      final results = db.select(
+        'SELECT * FROM stardict WHERE word = ? COLLATE NOCASE LIMIT 1;',
+        [q],
+      );
 
-      final ResultSet rows = ecdict.select(sql, [trimmed]);
-      if (rows.isEmpty) return null;
+      if (results.isEmpty) return null;
 
-      final row = rows.first;
+      final row = results.first;
+      final actualWord = row['word'] as String? ?? q;
 
-      // Query examples from extra db
-      final examples = <DictExample>[];
-      final extraDb = _extraDb;
-      if (extraDb != null) {
-        try {
-          final exampleRows = extraDb.select('''
-            SELECT source, en_text, cn_text, order_index
-            FROM examples
-            WHERE word = ? COLLATE NOCASE
-            ORDER BY order_index ASC;
-          ''', [trimmed]);
+      final examples = await _fetchExamples(actualWord);
 
-          for (final erow in exampleRows) {
-            examples.add(DictExample.fromMap({
-              'source': erow['source'],
-              'enText': erow['en_text'],
-              'cnText': erow['cn_text'],
-              'orderIndex': erow['order_index'],
-            }));
-          }
-        } catch (e) {
-          debugPrint('Failed to query examples: $e');
-        }
-      }
-
-      return DictWordDetail.fromRow(
-        {
-          'word': row['word'],
-          'phonetic': row['phonetic'],
-          'translation': row['translation'],
-          'definition': row['definition'],
-          'tag': row['tag'],
-          'collins': row['collins'],
-          'oxford': row['oxford'],
-          'exchange': row['exchange'],
-        },
+      return DictWordDetail(
+        word: actualWord,
+        phonetic: row['phonetic'] as String? ?? '',
+        rawTranslation: row['translation'] as String? ?? '',
+        definition: row['definition'] as String? ?? '',
+        tagString: row['tag'] as String? ?? '',
+        collins: (row['collins'] as int?) ?? 0,
+        oxford: (row['oxford'] as int?) ?? 0,
+        exchangeString: row['exchange'] as String? ?? '',
         examples: examples,
       );
     } catch (e) {
-      debugPrint('getWordDetail error: $e');
+      debugPrint('Dictionary getWordDetail error: $e');
       return null;
     }
+  }
+
+  Future<List<DictExample>> _fetchExamples(String word) async {
+    final db = _extraDb;
+    if (db == null) return [];
+
+    final list = <DictExample>[];
+
+    try {
+      final rows = db.select(
+        'SELECT source, en_text, cn_text, order_index FROM examples WHERE word = ? COLLATE NOCASE ORDER BY order_index ASC LIMIT 10;',
+        [word],
+      );
+      for (final r in rows) {
+        list.add(DictExample(
+          source: r['source'] as String? ?? 'oxford',
+          enText: r['en_text'] as String? ?? '',
+          cnText: r['cn_text'] as String?,
+          orderIndex: (r['order_index'] as int?) ?? 0,
+        ));
+      }
+    } catch (e) {
+      debugPrint('Failed to query dict_extra.db: $e');
+    }
+
+    return list;
   }
 
   void dispose() {
@@ -183,5 +195,7 @@ class DictionaryDbService {
     _ecdictDb = null;
     _extraDb?.close();
     _extraDb = null;
+    _resolvedEcdictPath = null;
+    _resolvedExtraPath = null;
   }
 }

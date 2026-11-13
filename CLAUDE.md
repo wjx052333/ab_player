@@ -121,10 +121,11 @@ lib/
   - **Windows / Desktop**：优先探测项目工作区 `data_download/english-sounds`（便于本地开发与持久化检查），若不存在则使用系统文档目录 `getApplicationDocumentsDirectory()/english-sounds`。
 - **离线词典探测 (`ecdict-ultimate.db`, `.mdx`, `.mdd`)**：
   - **分层探测优先级**：
-    1. 用户自定义路径（通过 UI 上的 `file_picker` 选取并由 `SharedPreferences` 持久化）；
-    2. 桌面环境探测：相对路径 `data_download/...`；
-    3. 移动端/跨平台环境探测：系统下载目录 `getDownloadsDirectory()`（即 `/storage/emulated/0/Download/`，用户拷入常用位置）以及应用文档目录 `getApplicationDocumentsDirectory()`；
-    4. 应用沙盒支持目录 `getApplicationSupportDirectory()`。
+    1. 用户自定义路径（通过 UI 选取并由 `SharedPreferences` 持久化 `custom_ecdict_path`）；
+    2. 桌面环境探测：相对开发路径 `data_download/...`；
+    3. 移动端/Android 规范探测：通过原生 `MethodChannel` (`StoragePermissionService`) 动态解析权威主下载目录 `Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)` 以及外置 SD 卡 `StorageManager.storageVolumes` 下的 `Download/` 目录；
+    4. 常见系统路径兜底：`/storage/emulated/0/Download`、`/sdcard/Download`；
+    5. 应用沙盒外部与内部文档目录：`getDownloadsDirectory()`、`getApplicationDocumentsDirectory()`、`getApplicationSupportDirectory()`。
 
 ### 3.5 4级发音调度管道 (`DictionaryAudioService`)
 彻底杜绝手机文件系统中产生数万个散落 MP3 碎文件的弊端：

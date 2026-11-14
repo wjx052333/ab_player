@@ -128,7 +128,7 @@ lib/
 - **内置 LRU 缓存**：对最近访问的块维持热点缓存，高频查词无感知。
 
 ### 3.3 可扩展多词典 Tab 架构 (`MDictManagerService`)
-- **开箱即用自动挂载**：启动自动探测 `data_download/` 目录下的词典（如 `oxfordPrimary.mdx`、`Longman...mdx`、`Sound_us_uk.mdd`）；
+- **开箱即用自动挂载**：启动自动探测 `data_download/` 目录下的词典（如 `oxfordPrimary.mdx`、`OALD2024.09/oaldpe.mdx`（牛津高阶，资源拆在 `oaldpe.mdd` + `oaldpe.1/2/3.mdd`，包会全部挂上并预置 jQuery）、`Longman...mdx`、`Sound_us_uk.mdd`）；
 - **用户动态热插拔**：用户可通过查词工作台顶栏的 `[ 词库管理 ]`，点击 `[+ 添加 MDX/MDD 词典文件]`（通过 `file_picker`）随时挂载新词典（如 Oxford 10th、Collins 等）；
 - **动态新增 Chip**：顶栏 Chip 条根据当前启用的词典包动态渲染，顺序与词库管理中的拖拽排序一致；
 - **持久化记录**：使用 `SharedPreferences` 保存外挂词典路径和启用状态，重启自动恢复；

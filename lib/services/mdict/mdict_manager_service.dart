@@ -65,6 +65,17 @@ class MDictManagerService extends ChangeNotifier {
       }
     }
 
+    final oaldCandidates = await _resolveCandidateFiles([
+      'OALD2024.09/oaldpe.mdx',
+      'oaldpe.mdx',
+    ]);
+    for (final f in oaldCandidates) {
+      if (f.existsSync()) {
+        await addPackFromFile(f.path, customTitle: '📗 牛津高阶 OALD', saveToPrefs: false);
+        break;
+      }
+    }
+
     final longmanCandidates = await _resolveCandidateFiles([
       'LongmanDictionaryOfContemporaryEnglish6thEnEn/LongmanDictionaryOfContemporaryEnglish6thEnEn.mdx',
       'LongmanDictionaryOfContemporaryEnglish6thEnEn.mdx',
@@ -138,8 +149,12 @@ class MDictManagerService extends ChangeNotifier {
   }) async {
     if (!File(mdxPath).existsSync()) return null;
 
-    // Avoid duplicates
-    final existingIdx = _packs.indexWhere((p) => p.mdxPath == mdxPath);
+    // Avoid duplicates: the same dictionary can arrive via auto-discovery and via a
+    // saved/picked path that differs (e.g. another Download directory), so match by file name too.
+    final fileName = File(mdxPath).uri.pathSegments.last.toLowerCase();
+    final existingIdx = _packs.indexWhere(
+      (p) => p.mdxPath == mdxPath || File(p.mdxPath).uri.pathSegments.last.toLowerCase() == fileName,
+    );
     if (existingIdx != -1) {
       return _packs[existingIdx];
     }
@@ -198,7 +213,7 @@ class MDictManagerService extends ChangeNotifier {
   /// companion .mdd of any active pack, falling back to the dedicated sound bank.
   Future<Uint8List?> getResourceBytes(String path) async {
     for (final pack in activePacks) {
-      if (pack.mddReader == null) continue;
+      if (!pack.hasResources) continue;
       final bytes = await pack.lookupResource(path);
       if (bytes != null && bytes.isNotEmpty) return bytes;
     }
@@ -239,7 +254,7 @@ class MDictManagerService extends ChangeNotifier {
 
     // 2. Check each loaded dictionary pack's companion .mdd
     for (final pack in activePacks) {
-      if (pack.mddReader != null) {
+      if (pack.hasResources) {
         for (final key in candidates) {
           final bytes = await pack.lookupResource(key);
           if (bytes != null && bytes.isNotEmpty) {

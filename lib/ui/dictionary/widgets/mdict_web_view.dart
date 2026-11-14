@@ -56,16 +56,29 @@ class _MDictWebViewState extends State<MDictWebView> {
 
   NavigationDecision _onNavigate(NavigationRequest request) {
     final url = request.url;
+    if (url.startsWith('tts://')) {
+      // Example sentence without recorded audio: the page asks the app to speak it.
+      widget.onSoundUrl(Uri.decodeComponent(url));
+      return NavigationDecision.prevent;
+    }
     if (url.startsWith('sound://')) {
       var path = url.substring('sound://'.length);
       try {
-        path = Uri.decodeFull(path);
+        // decodeComponent (not decodeFull): decodeFull leaves %23 ('#') encoded,
+        // but OALD example audio is stored as e.g. `_test#_uss_2.mp3`.
+        path = Uri.decodeComponent(path);
       } catch (_) {}
       widget.onSoundUrl(path);
       return NavigationDecision.prevent;
     }
     if (url.startsWith('entry://')) {
       final target = Uri.decodeComponent(url.substring('entry://'.length)).trim();
+      if (target.startsWith('@') || RegExp(r'[=&?]').hasMatch(target)) {
+        // OALD word-list / topic pages (CEFR level icons, OPAL badges) aren't headwords.
+        // The WebView may strip the leading '@' (parsed as URL userinfo), so also
+        // reject query-like targets.
+        return NavigationDecision.prevent;
+      }
       if (target.startsWith('#')) {
         // In-page anchor (e.g. "noun | verb" jump links).
         final id = target.substring(1).replaceAll("'", r"\'");

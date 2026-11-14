@@ -17,8 +17,12 @@ class MDictDictionaryPack {
   final int totalEntries;
 
   final MDictReader mdxReader;
-  final MDictReader? mddReader;
+  /// All companion .mdd readers. Large dictionaries (e.g. OALD) split their
+  /// resources over `name.mdd`, `name.1.mdd`, `name.2.mdd`, ...
+  final List<MDictReader> mddReaders;
   bool isEnabled;
+
+  bool get hasResources => mddReaders.isNotEmpty;
 
   MDictDictionaryPack({
     required this.id,
@@ -30,7 +34,7 @@ class MDictDictionaryPack {
     this.customJs,
     required this.totalEntries,
     required this.mdxReader,
-    this.mddReader,
+    this.mddReaders = const [],
     this.isEnabled = true,
   });
 
@@ -43,12 +47,14 @@ class MDictDictionaryPack {
   }) async {
     final mdxReader = await MDictReader.open(mdxPath);
 
-    MDictReader? mddReader;
+    final mddReaders = <MDictReader>[];
     final resolvedMddPath = mddPath ?? _findCompanionFile(mdxPath, '.mdd');
     if (resolvedMddPath != null && File(resolvedMddPath).existsSync()) {
-      try {
-        mddReader = await MDictReader.open(resolvedMddPath);
-      } catch (_) {}
+      for (final path in [resolvedMddPath, ..._findSplitMdds(resolvedMddPath)]) {
+        try {
+          mddReaders.add(await MDictReader.open(path));
+        } catch (_) {}
+      }
     }
 
     String? cssContent;
@@ -59,13 +65,18 @@ class MDictDictionaryPack {
       } catch (_) {}
     }
 
-    String? jsContent;
-    final resolvedJsPath = _findCompanionFile(mdxPath, '.js');
-    if (resolvedJsPath != null) {
+    // jQuery (if shipped next to the dictionary) must run before the dictionary script.
+    final jsParts = <String>[];
+    final jsPaths = [
+      ..._findJqueryFiles(mdxPath),
+      ?_findCompanionFile(mdxPath, '.js'),
+    ];
+    for (final path in jsPaths.toSet()) {
       try {
-        jsContent = await File(resolvedJsPath).readAsString();
+        jsParts.add(await File(path).readAsString());
       } catch (_) {}
     }
+    final jsContent = jsParts.isEmpty ? null : jsParts.join('\n;\n');
 
     final id = File(mdxPath).uri.pathSegments.last.replaceAll('.mdx', '');
     String title = customTitle ?? mdxReader.header.title.trim();
@@ -83,7 +94,7 @@ class MDictDictionaryPack {
       customJs: jsContent,
       totalEntries: mdxReader.numEntries,
       mdxReader: mdxReader,
-      mddReader: mddReader,
+      mddReaders: mddReaders,
       isEnabled: true,
     );
   }
@@ -103,6 +114,33 @@ class MDictDictionaryPack {
     return null;
   }
 
+  /// `name.mdd` -> sibling `name.1.mdd`, `name.2.mdd`, ... in numeric order.
+  static List<String> _findSplitMdds(String mddPath) {
+    final base = mddPath.substring(0, mddPath.length - '.mdd'.length);
+    final fileName = base.split(RegExp(r'[\\/]')).last;
+    final pattern = RegExp('^${RegExp.escape(fileName)}\\.(\\d+)\\.mdd\$', caseSensitive: false);
+    final found = <int, String>{};
+    try {
+      for (final entity in File(mddPath).parent.listSync()) {
+        if (entity is! File) continue;
+        final m = pattern.firstMatch(entity.uri.pathSegments.last);
+        if (m != null) found[int.parse(m.group(1)!)] = entity.path;
+      }
+    } catch (_) {}
+    return [for (final k in found.keys.toList()..sort()) found[k]!];
+  }
+
+  static List<String> _findJqueryFiles(String mdxPath) {
+    try {
+      return [
+        for (final e in File(mdxPath).parent.listSync())
+          if (e is File && RegExp(r'jquery[^/\\]*\.js$', caseSensitive: false).hasMatch(e.path)) e.path,
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// Look up definition HTML in this dictionary
   Future<String?> lookupDefinition(String word) async {
     if (!isEnabled) return null;
@@ -111,12 +149,18 @@ class MDictDictionaryPack {
 
   /// Look up companion resource (audio / image)
   Future<Uint8List?> lookupResource(String resourcePath) async {
-    return mddReader?.lookupResource(resourcePath);
+    for (final reader in mddReaders) {
+      final bytes = await reader.lookupResource(resourcePath);
+      if (bytes != null && bytes.isNotEmpty) return bytes;
+    }
+    return null;
   }
 
   /// Close and dispose file handles
   Future<void> dispose() async {
     await mdxReader.dispose();
-    await mddReader?.dispose();
+    for (final reader in mddReaders) {
+      await reader.dispose();
+    }
   }
 }

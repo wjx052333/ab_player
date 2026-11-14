@@ -203,6 +203,10 @@ class DictionaryScreenState extends State<DictionaryScreen> with WidgetsBindingO
                       onPlayAudioScheme: (soundUrl) async {
                         // Recorded audio only (exact MDD path, e.g. Longman
                         // hwd/ame/1/test1.mp3); entries without audio stay silent.
+                        if (soundUrl.startsWith('tts://')) {
+                          await widget.audioService.speakText(soundUrl.substring('tts://'.length));
+                          return;
+                        }
                         await widget.audioService.playResource(soundUrl);
                       },
                       child: Column(

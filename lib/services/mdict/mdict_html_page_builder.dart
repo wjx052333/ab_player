@@ -56,6 +56,10 @@ a{color:#6fb1ff}
 .at-link{border-color:#3a3a3a!important;background:#1d1d1d!important}
 font[color="#0"],font[color="#000000"],font[color="black"]{color:#e0e0e0!important}
 img{max-width:100%}
+.oaldpe ul.examples>li a.pron-us{display:unset}
+.oaldpe ul.examples>li:has(a.pron-us)::before{display:none}
+ul.examples>li a.tts-app{border-bottom:2px dashed #e0a458;box-sizing:border-box;height:1.45em}
+ul.examples>li a.tts-app::before{color:#e0a458!important;opacity:1!important}
 ''';
 
   static const _imageLoader = '''
@@ -68,6 +72,36 @@ img{max-width:100%}
   }
 })();
 ''';
+
+  /// OALD only ships recorded audio for some examples (the rest is online TTS
+  /// done by its own script, which cannot work offline). Give every example
+  /// without a speaker one that asks the app to read the sentence aloud.
+  static const _exampleTts = r'''
+(function(){
+  var lis = document.querySelectorAll('ul.examples > li');
+  for (var i = 0; i < lis.length; i++) {
+    var li = lis[i];
+    if (li.querySelector('a.audio_play_button')) continue;
+    var x = li.querySelector('.x, .unx');
+    if (!x) continue;
+    var c = x.cloneNode(true);
+    var junk = c.querySelectorAll('.gloss, chn, xt, script');
+    for (var j = 0; j < junk.length; j++) junk[j].remove();
+    var t = c.textContent.replace(/​/g, '').replace(/\s+/g, ' ').trim();
+    if (!t) continue;
+    var a = document.createElement('a');
+    a.className = 'sound audio_play_button pron-us icon-audio tts-app';
+    a.href = 'tts://' + encodeURIComponent(t);
+    x.appendChild(a);
+  }
+})();
+''';
+
+  // Also force offline recorded example audio: the default (1) intercepts clicks to play
+  // an online URL, so the sound:// link never reaches the app.
+  static const _oaldOfflineConfig =
+      'try{var r=oaldpeConfig.onlineResources;r.enableOnlineTTS.selectedValue=false;'
+      'r.officialExPronOpt.selectedValue=2;r.onlineWordPron.selectedValue=false;}catch(e){}';
 
   static String? _mimeFor(Uint8List b) {
     if (b.length >= 4 && b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47) {
@@ -115,11 +149,18 @@ img{max-width:100%}
       ..write('<meta name="viewport" content="width=device-width,initial-scale=1">');
     if (css != null && css.isNotEmpty) buf.write('<style>$css</style>');
     buf.write('<style>$darkOverrideCss</style>');
-    if (js != null && js.isNotEmpty) buf.write('<script>$js</script>');
+    if (js != null && js.isNotEmpty) {
+      buf.write('<script>$js</script>');
+      // OALD's init awaits online scripts (crypto-js for its Edge TTS) and only then
+      // calls main(), which wires up all folding/interaction. Offline that await
+      // throws, so nothing is clickable. Our own app-side TTS replaces it.
+      if (js.contains('oaldpeConfig')) buf.write('<script>$_oaldOfflineConfig</script>');
+    }
     buf.write('</head><body>$body');
     if (images.isNotEmpty) {
       buf.write('<script>window.__mddImages=${jsonEncode(images)};$_imageLoader</script>');
     }
+    if (body.contains('class="examples"')) buf.write('<script>$_exampleTts</script>');
     buf.write('</body></html>');
     return buf.toString();
   }

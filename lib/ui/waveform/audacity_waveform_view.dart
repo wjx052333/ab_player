@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../models/repeat_state.dart';
 import '../../models/speech_segment.dart';
+import '../../models/subtitle_sentence.dart';
 import '../../models/waveform_gesture_mode.dart';
 import '../controls/mini_icon_button.dart';
 import 'audacity_waveform_painter.dart';
@@ -11,6 +12,7 @@ class AudacityWaveformView extends StatefulWidget {
   final List<double> peaks;
   final double peaksPerSecond;
   final List<SpeechSegment> segments;
+  final List<SubtitleSentence> subtitles;
   final Duration totalDuration;
   final Duration currentPosition;
   final RepeatState repeatState;
@@ -29,6 +31,7 @@ class AudacityWaveformView extends StatefulWidget {
     required this.peaks,
     this.peaksPerSecond = 0,
     this.segments = const [],
+    this.subtitles = const [],
     required this.totalDuration,
     required this.currentPosition,
     required this.repeatState,
@@ -311,6 +314,7 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
                   peaks: widget.peaks,
                   peaksPerSecond: widget.peaksPerSecond,
                   segments: widget.segments,
+                  subtitles: widget.subtitles,
                   totalDuration: widget.totalDuration,
                   currentPosition: widget.currentPosition,
                   repeatState: widget.repeatState,

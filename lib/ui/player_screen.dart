@@ -10,6 +10,7 @@ import '../services/dictionary_audio_service.dart';
 import '../services/dictionary_db_service.dart';
 import '../services/mdict/mdict_manager_service.dart';
 import '../services/speech_segmenter.dart';
+import '../services/subtitle_reader.dart';
 import '../services/waveform_extractor.dart';
 import 'audacity_theme.dart';
 import 'controls/ab_control_bar.dart';
@@ -97,6 +98,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         peaks: _track.peaks,
         peaksPerSecond: _track.peaksPerSecond,
         segments: _segmenter.detect(_track.peaks, _track.peaksPerSecond),
+        subtitles: _track.subtitles,
       );
     });
   }
@@ -140,6 +142,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         final segments = peaksPerSecond > 0
             ? _segmenter.detect(wave.peaks, peaksPerSecond)
             : const <SpeechSegment>[];
+        final subtitles = await SubtitleReader.readFile(path);
         setState(() {
           _track = AudioTrack(
             path: path,
@@ -148,6 +151,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             peaks: wave.peaks,
             peaksPerSecond: peaksPerSecond,
             segments: segments,
+            subtitles: subtitles,
           );
           _repeatController.clearSelection();
         });
@@ -289,6 +293,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               peaks: _track.peaks,
               peaksPerSecond: _track.peaksPerSecond,
               segments: _track.segments,
+              subtitles: _track.subtitles,
               totalDuration: _track.duration,
               currentPosition: _currentPos,
               repeatState: _repeatController.state,

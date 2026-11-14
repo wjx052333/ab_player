@@ -3,22 +3,27 @@ import 'package:flutter/material.dart';
 import '../audacity_theme.dart';
 import '../../models/repeat_state.dart';
 import '../../models/speech_segment.dart';
+import '../../models/subtitle_sentence.dart';
 import 'time_ruler_helper.dart';
 
 class AudacityWaveformPainter extends CustomPainter {
   final List<double> peaks;
   final double peaksPerSecond; // 0 表示按 peaks 铺满总时长推算
   final List<SpeechSegment> segments;
+  final List<SubtitleSentence> subtitles;
   final Duration totalDuration;
   final Duration currentPosition;
   final RepeatState repeatState;
   final double scrollOffset;
   final double pixelsPerSecond;
 
+  static const double subtitleFontSize = 11.0;
+
   AudacityWaveformPainter({
     required this.peaks,
     this.peaksPerSecond = 0,
     this.segments = const [],
+    this.subtitles = const [],
     required this.totalDuration,
     required this.currentPosition,
     required this.repeatState,
@@ -54,11 +59,54 @@ class AudacityWaveformPainter extends CustomPainter {
     // 3. 绘制波峰 (视口裁剪 Viewport Clipping)
     _drawWaveform(canvas, size, rulerHeight, centerY);
 
+    // 3b. 字幕直接叠在波形上，靠顶部多行排布
+    _drawSubtitles(canvas, size, rulerHeight);
+
     // 4. 绘制 A-B 选区
     _drawSelection(canvas, size, rulerHeight);
 
     // 5. 绘制当前播放指针
     _drawPlayhead(canvas, size, rulerHeight);
+  }
+
+  /// 每句字幕直接画在波形上、其时间区间内，从标尺下沿向下多行排布；
+  /// 行数最多占波形区上半部分，放不下的在最后一行以 ... 截断。句子露出一半时文字贴着视口边缘
+  void _drawSubtitles(Canvas canvas, Size size, double rulerHeight) {
+    final maxTextHeight = (size.height - rulerHeight) / 2 - 4;
+    final shadow = [const Shadow(color: Color(0xCC000000), blurRadius: 2)];
+
+    for (final sub in subtitles) {
+      final x1 = sub.start.inMilliseconds / 1000.0 * pixelsPerSecond - scrollOffset;
+      final x2 = sub.end.inMilliseconds / 1000.0 * pixelsPerSecond - scrollOffset;
+      if (x2 < 0 || x1 > size.width) continue;
+
+      final left = max(x1, 0.0) + 3;
+      final maxWidth = min(x2, size.width) - left - 2;
+      if (maxWidth < 12) continue;
+
+      final active = currentPosition >= sub.start && currentPosition <= sub.end;
+      final style = TextStyle(
+        color: active ? Colors.white : const Color(0xCCBDBDBD),
+        fontSize: subtitleFontSize,
+        height: 1.15,
+        shadows: shadow,
+      );
+      // 先按一行测出行高，再算最多能放几行
+      final lineHeight = (TextPainter(
+        text: TextSpan(text: 'A', style: style),
+        textDirection: TextDirection.ltr,
+      )..layout())
+          .height;
+      final maxLines = max(1, (maxTextHeight / lineHeight).floor());
+      TextPainter(
+        text: TextSpan(text: sub.text, style: style),
+        textDirection: TextDirection.ltr,
+        maxLines: maxLines,
+        ellipsis: '...',
+      )
+        ..layout(maxWidth: maxWidth)
+        ..paint(canvas, Offset(left, rulerHeight + 3));
+    }
   }
 
   void _drawRuler(Canvas canvas, Size size, double rulerHeight) {
@@ -206,6 +254,7 @@ class AudacityWaveformPainter extends CustomPainter {
         oldDelegate.scrollOffset != scrollOffset ||
         oldDelegate.pixelsPerSecond != pixelsPerSecond ||
         oldDelegate.peaks != peaks ||
-        oldDelegate.segments != segments;
+        oldDelegate.segments != segments ||
+        oldDelegate.subtitles != subtitles;
   }
 }

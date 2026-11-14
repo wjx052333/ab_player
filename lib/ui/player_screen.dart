@@ -307,9 +307,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ),
           ),
         ),
-        // 下半部分：左右分栏控制区
-        Expanded(
-          flex: 30,
+        // 下半部分：左右分栏控制区，固定高度刚好容纳两行控件，大屏上也不会被拉高
+        SizedBox(
+          height: 72,
           child: Container(
             color: AudacityTheme.panelBackground,
             child: Row(

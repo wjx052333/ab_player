@@ -24,6 +24,7 @@ lib/
 │   ├── speech_segmenter.dart               # 断句检测：按响度包络+自适应阈值找出说话区间 (静音≥250ms 视为句间停顿)
 │   ├── dictionary_db_service.dart          # SQLite 查词服务 (前缀联想、中高考/四六级升学权重排序)
 │   ├── dictionary_audio_service.dart       # 4级发音调度服务 (MDD直读 -> 本地MP3 -> 有道API -> TTS)
+│   ├── speex_decoder.dart                  # Ogg/Speex -> WAV (dart:ffi 调原生 libspeexdec.so，仅 Android)
 │   └── mdict/
 │       ├── mdict_html_page_builder.dart    # 将词条 HTML 拼成自包含页面 (内联 .css/.js、MDD 图片转 data URI、暗黑覆盖样式)
 │       ├── mdict_crypto.dart               # 纯 Dart RIPEMD-128 与 MDict fastDecrypt 密钥解密算法
@@ -69,9 +70,9 @@ lib/
 - **顶部 32dp 全局导航与状态栏**：
   - 常驻分段切换按钮：`[ 🎧 播放器 ]` ⟷ `[ 📖 词典 ]`（通过 `IndexedStack` 保持播放状态与音频解码存活）；
   - 词典 Tab 下展示基础词库连接状态、已挂载外部 MDX 词典套数徽章、词库管理与指定文件入口。
-- **70:30 播放器比例**：
-  - 上半部（70% 高度）：全宽波形与标尺视口；
-  - 下半部（30% 高度）：左右双列 1:2（左列 1/3 宽为 A-B 打点与微调，右列 2/3 宽为精听参数与进度条）；播放/从头播放/缩放/手势切换均为波形图上的悬浮按钮。
+- **播放器比例（波形自适应 + 底栏固定 72dp）**：
+  - 上半部（占满剩余高度）：全宽波形与标尺视口；
+  - 下半部（固定 72dp，刚好容纳两行控件；曾用 30% 比例，大屏上被拉得过高）：左右双列 1:2（左列 1/3 宽为 A-B 打点与微调，右列 2/3 宽为精听参数与进度条）；播放/从头播放/缩放/手势切换均为波形图上的悬浮按钮。
 - **35:65 查词工作台双栏结构**：
   - 左侧检索栏（35% 宽）：常驻带清除按钮的防抖搜索框，前缀匹配升学高频词置顶；
   - 右侧横屏词卡（65% 宽）：
@@ -175,6 +176,16 @@ lib/
 3. **第 3 级（在线有道开放 API）**：若本地缺失且有网络，自动拉取有道音频并持久化保存到安全缓存目录；
 4. **第 4 级（系统 TTS 保底）**：断网且完全无离线资源时降级回退至 `flutter_tts` 本地语音合成。
 
+#### 3.5.1 Ogg/Speex 解码（`SpeexDecoder` + 原生 libspeex）
+- **问题**：`Sound_us_uk.mdd` 里的发音全是 Ogg/Speex（11025Hz 窄带），Android 的 ExoPlayer / MediaPlayer **都不支持 Speex**，`setFilePath` 报 `None of the available extractors could read the stream`，第 1 级必然失败；断网时有道也失败、TTS 也没声，就整条链路静音。朗文/牛津 MDD 里是 mp3，不受影响。
+- **方案**：`android/app/src/main/cpp/` 内置 libspeex 浮点版解码源码（BSD，只含解码用到的文件）+ `speex_decode.c`（解析 Ogg 页 → `speex_decode_int` → PCM），`CMakeLists.txt` 产出 `libspeexdec.so`（已配 16KB 页对齐），`android/app/build.gradle.kts` 通过 `externalNativeBuild` 编译。Dart 侧 `lib/services/speex_decoder.dart` 用 `dart:ffi`（依赖 `ffi` 包）调用，把 PCM 包成 WAV，`DictionaryAudioService._playBytes` 再交给 just_audio 播放。
+- **仅 Android 有效**：其他平台（含 PC 测试）没有该 so，`oggSpeexToWav` 返回 null，会退回后面几级。PC 上没有 C 编译器，改了 C 代码只能 `flutter run --release` 装到真机验证。
+- **排查方法**：`adb logcat -d | grep -i "flutter\|exoplayer"`，看 `MDD audio play error` / `Youdao fetch audio failed`；怎么确认词条音频格式：用 `MDictManagerService.getAudioBytes` 取出字节，头 4 字节 `OggS`，偏移 28 起 8 字节为 `Speex   `。
+
+#### 3.5.2 TTS 无声：`not bound to TTS engine`
+- Android 11+ 包可见性限制：manifest 的 `<queries>` 必须声明 `android.intent.action.TTS_SERVICE`，否则 App 连不上系统 TTS 引擎，`speak` 静默失败。已在 `AndroidManifest.xml` 声明。
+- 排查：`adb logcat -d | grep -i tts`；`adb shell cmd package query-services -a android.intent.action.TTS_SERVICE` 看设备有没有 TTS 引擎。
+
 ---
 
 ## 4. 常用开发与构建命令
@@ -201,6 +212,8 @@ flutter test test/integration/dictionary_lookup_integration_test.dart
 
 # 本地调试运行 (支持真机/桌面热重载 'r')
 flutter run
+
+C:\temp\flutter\flutter\bin\flutter.bat build apk --release
 ```
 
 ---

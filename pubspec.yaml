@@ -45,6 +45,7 @@ dependencies:
   flutter_widget_from_html: ^0.16.1
   webview_flutter: ^4.14.1
   just_waveform: ^0.0.7
+  ffi: ^2.2.0
 
 dev_dependencies:
   flutter_test:

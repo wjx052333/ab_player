@@ -6,6 +6,7 @@ import 'storage_permission_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'mdict/mdict_manager_service.dart';
+import 'speex_decoder.dart';
 
 class DictionaryAudioService {
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -175,20 +176,7 @@ class DictionaryAudioService {
       try {
         final audioBytes = await mdictManager!.getAudioBytes(safeWord, accent: accent);
         if (audioBytes != null && audioBytes.isNotEmpty) {
-          final tempDir = Directory.systemTemp;
-          final isOgg = audioBytes.length >= 4 &&
-              audioBytes[0] == 0x4F &&
-              audioBytes[1] == 0x67 &&
-              audioBytes[2] == 0x67 &&
-              audioBytes[3] == 0x53; // OggS
-          final ext = isOgg ? 'spx' : 'mp3';
-          final tempFile = File('${tempDir.path}/mdd_voice_${safeWord}_$accent.$ext');
-          await tempFile.writeAsBytes(audioBytes, flush: true);
-
-          await _audioPlayer.stop();
-          await _audioPlayer.setFilePath(tempFile.path);
-          await _audioPlayer.play();
-          return;
+          if (await _playBytes(audioBytes, 'mdd_voice_${safeWord}_$accent')) return;
         }
       } catch (e) {
         debugPrint('MDD audio play error: $e');
@@ -234,6 +222,31 @@ class DictionaryAudioService {
     await speakText(safeWord);
   }
 
+  /// 把 MDD 里取出的音频字节写成临时文件并播放。Ogg/Speex 先解成 WAV (Android 不支持 Speex)，
+  /// 解不了 (非 Android 或解码失败) 返回 false。
+  Future<bool> _playBytes(Uint8List bytes, String baseName) async {
+    var data = bytes;
+    var ext = 'mp3';
+    if (SpeexDecoder.isOggSpeex(bytes)) {
+      final wav = SpeexDecoder.oggSpeexToWav(bytes);
+      if (wav != null) {
+        data = wav;
+        ext = 'wav';
+      } else {
+        ext = 'spx';
+      }
+    } else if (bytes.length >= 4 &&
+        bytes[0] == 0x4F && bytes[1] == 0x67 && bytes[2] == 0x67 && bytes[3] == 0x53) {
+      ext = 'ogg';
+    }
+    final file = File('${Directory.systemTemp.path}/$baseName.$ext');
+    await file.writeAsBytes(data, flush: true);
+    await _audioPlayer.stop();
+    await _audioPlayer.setFilePath(file.path);
+    await _audioPlayer.play();
+    return true;
+  }
+
   /// Play a `sound://` resource by its exact path inside the dictionary's MDD.
   /// Returns false when the resource is missing or cannot be played, so the
   /// caller can fall back to word-based playback.
@@ -243,16 +256,8 @@ class DictionaryAudioService {
     try {
       final bytes = await manager.getResourceBytes(path);
       if (bytes == null) return false;
-      final isOgg = bytes.length >= 4 &&
-          bytes[0] == 0x4F && bytes[1] == 0x67 && bytes[2] == 0x67 && bytes[3] == 0x53;
-      final ext = isOgg ? 'spx' : 'mp3';
       final name = path.replaceAll(RegExp(r'[^A-Za-z0-9]'), '_');
-      final file = File('${Directory.systemTemp.path}/mdd_res_$name.$ext');
-      await file.writeAsBytes(bytes, flush: true);
-      await _audioPlayer.stop();
-      await _audioPlayer.setFilePath(file.path);
-      await _audioPlayer.play();
-      return true;
+      return await _playBytes(bytes, 'mdd_res_$name');
     } catch (e) {
       debugPrint('MDD resource play error: $e');
       return false;

@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 import '../../models/repeat_state.dart';
 import '../../models/speech_segment.dart';
 import '../../models/subtitle_sentence.dart';
-import '../../models/waveform_gesture_mode.dart';
 import '../controls/mini_icon_button.dart';
 import 'audacity_waveform_painter.dart';
+
+enum _DragAction { pan, selectRange }
 
 class AudacityWaveformView extends StatefulWidget {
   final List<double> peaks;
@@ -17,8 +18,6 @@ class AudacityWaveformView extends StatefulWidget {
   final Duration currentPosition;
   final RepeatState repeatState;
   final bool isPlaying;
-  final WaveformGestureMode gestureMode;
-  final ValueChanged<WaveformGestureMode> onGestureModeChanged;
   final Function(Duration) onSeek;
   final Function(Duration, Duration) onRangeSelected;
   final Function(Duration) onPointAMoved;
@@ -36,8 +35,6 @@ class AudacityWaveformView extends StatefulWidget {
     required this.currentPosition,
     required this.repeatState,
     required this.isPlaying,
-    required this.gestureMode,
-    required this.onGestureModeChanged,
     required this.onSeek,
     required this.onRangeSelected,
     required this.onPointAMoved,
@@ -56,6 +53,7 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
 
   double? _dragStartX;
   double? _dragStartScrollOffset;
+  _DragAction? _dragAction;
   int? _activeHandle; // 1: A, 2: B
 
   bool _isUserInteracting = false;
@@ -186,6 +184,16 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
     return max(0.0, totalWidth - width);
   }
 
+  /// 判断 Y 坐标是否落在中间 1/2 A-B 划选区域内
+  bool _isInMiddleSelectionZone(double y, double totalHeight) {
+    const rulerHeight = 26.0;
+    final waveHeight = totalHeight - rulerHeight;
+    if (waveHeight <= 0) return false;
+    final y1 = rulerHeight + waveHeight * 0.25;
+    final y2 = rulerHeight + waveHeight * 0.75;
+    return y >= y1 && y <= y2;
+  }
+
   @override
   void dispose() {
     _interactionCooldownTimer?.cancel();
@@ -197,6 +205,7 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
+        final height = constraints.maxHeight;
         final minPPS = _minPixelsPerSecond(width);
         final canZoomOut = _pixelsPerSecond > minPPS + 0.5;
         final canZoomIn = _pixelsPerSecond < 300.0 - 0.5;
@@ -206,8 +215,9 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
             GestureDetector(
               onTapUp: (details) {
                 final target = _xToDuration(details.localPosition.dx, width);
-                // AB 划选模式下点中某个句子：直接把 A-B 设成该句边界
-                final seg = widget.gestureMode.isSelect ? _segmentAt(target) : null;
+                final inMiddle = _isInMiddleSelectionZone(details.localPosition.dy, height);
+                // 仅在中间 1/2 划选区域点中某个句子时：直接把 A-B 设成该句边界；其他位置统一 Seek
+                final seg = inMiddle ? _segmentAt(target) : null;
                 if (seg != null) {
                   widget.onRangeSelected(seg.start, seg.end);
                 } else {
@@ -240,6 +250,14 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
                 }
                 _dragStartX = localX;
                 _dragStartScrollOffset = _scrollOffset;
+
+                // 判断单指拖拽类型：中间 1/2 为划选 A-B，上下各 1/4 为平移波形
+                final localY = details.localFocalPoint.dy;
+                if (_isInMiddleSelectionZone(localY, height)) {
+                  _dragAction = _DragAction.selectRange;
+                } else {
+                  _dragAction = _DragAction.pan;
+                }
               },
               onScaleUpdate: (details) {
                 // 1. 如果在拖动手柄 (A/B 把手微调优先级最高)
@@ -269,18 +287,18 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
                   return;
                 }
 
-                // 3. 单指操作：根据当前手势模式分流
+                // 3. 单指操作：根据按下位置所在区域分流
                 if (details.pointerCount == 1 && _dragStartX != null) {
                   final currentX = details.localFocalPoint.dx;
 
-                  if (widget.gestureMode.isDrag) {
-                    // ✋ 拖动模式：平移波形
+                  if (_dragAction == _DragAction.pan) {
+                    // 上下 1/4 区域：平移波形
                     final deltaX = currentX - _dragStartX!;
                     setState(() {
                       _scrollOffset = ((_dragStartScrollOffset ?? _scrollOffset) - deltaX).clamp(0.0, _maxScroll(width));
                     });
                   } else {
-                    // AB 划选模式：拉出 A-B 选区
+                    // 中间 1/2 区域：拉出 A-B 选区
                     final p1 = _snapToBoundary(_xToDuration(_dragStartX!, width));
                     final p2 = _snapToBoundary(_xToDuration(currentX, width));
                     widget.onRangeSelected(p1, p2);
@@ -295,6 +313,7 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
               onScaleEnd: (details) {
                 _dragStartX = null;
                 _dragStartScrollOffset = null;
+                _dragAction = null;
                 _activeHandle = null;
 
                 // 松手 1.5 秒后平滑恢复播放跟随 (若 A-B 不在全屏内)
@@ -321,29 +340,6 @@ class _AudacityWaveformViewState extends State<AudacityWaveformView> {
                   scrollOffset: _scrollOffset,
                   pixelsPerSecond: _pixelsPerSecond,
                 ),
-              ),
-            ),
-
-            // 悬浮手势模式切换 (靠左，与右侧快捷按钮同高)
-            Positioned(
-              left: 12,
-              bottom: 8,
-              child: Row(
-                children: [
-                  MiniIconButton(
-                    icon: Icons.pan_tool_outlined,
-                    tooltip: '拖动',
-                    activeColor: widget.gestureMode.isDrag ? const Color(0xFF3AAFA9) : null,
-                    onPressed: () => widget.onGestureModeChanged(WaveformGestureMode.drag),
-                  ),
-                  const SizedBox(width: 6),
-                  MiniIconButton(
-                    label: 'AB',
-                    tooltip: '划选',
-                    activeColor: widget.gestureMode.isSelect ? const Color(0xFFF4D03F) : null,
-                    onPressed: () => widget.onGestureModeChanged(WaveformGestureMode.select),
-                  ),
-                ],
               ),
             ),
 

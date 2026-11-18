@@ -38,7 +38,7 @@ class AbControlBar extends StatelessWidget {
         child: SingleChildScrollView(
           child: Row(
             children: [
-              // A-B 控制按键与时间微调 (手势切换已移到波形图悬浮按钮)
+              // A-B 控制按键与时间微调
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,

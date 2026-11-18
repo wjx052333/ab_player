@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import '../controllers/ab_repeat_controller.dart';
 import '../models/audio_track.dart';
 import '../models/speech_segment.dart';
-import '../models/waveform_gesture_mode.dart';
 import '../services/audio_player_service.dart';
 import '../services/dictionary_audio_service.dart';
 import '../services/dictionary_db_service.dart';
@@ -47,7 +46,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   String _loadStage = '';
   DateTime? _lastBackAt;
   SpeechSegmenter _segmenter = const SpeechSegmenter();
-  WaveformGestureMode _gestureMode = WaveformGestureMode.drag;
 
   @override
   void initState() {
@@ -298,8 +296,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
               currentPosition: _currentPos,
               repeatState: _repeatController.state,
               isPlaying: _isPlaying,
-              gestureMode: _gestureMode,
-              onGestureModeChanged: (mode) => setState(() => _gestureMode = mode),
               onSeek: (pos) => _playerService.seek(pos),
               onRangeSelected: (p1, p2) => _repeatController.setSelectionRange(p1, p2),
               onPointAMoved: (pos) => _repeatController.markPointA(pos),
@@ -319,7 +315,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             color: AudacityTheme.panelBackground,
             child: Row(
               children: [
-                // 左侧列：手势切换 + A-B 控制与微调
+                // 左侧列：A-B 控制与微调
                 Expanded(
                   flex: 33,
                   child: AbControlBar(

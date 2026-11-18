@@ -56,4 +56,21 @@ void main() {
     ));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('AudacityWaveformPainter peaks 为空时绘制 AB 复读区域 水印文字', (tester) async {
+    final emptyPainter = AudacityWaveformPainter(
+      peaks: const [],
+      peaksPerSecond: 0,
+      totalDuration: Duration.zero,
+      currentPosition: Duration.zero,
+      repeatState: const RepeatState(),
+      scrollOffset: 0,
+      pixelsPerSecond: 30,
+    );
+    await tester.pumpWidget(Directionality(
+      textDirection: TextDirection.ltr,
+      child: SizedBox(width: 600, height: 200, child: CustomPaint(painter: emptyPainter)),
+    ));
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -92,6 +92,29 @@ class AudacityWaveformPainter extends CustomPainter {
       ..strokeWidth = 1.0;
     canvas.drawLine(Offset(0, y1), Offset(size.width, y1), linePaint);
     canvas.drawLine(Offset(0, y2), Offset(size.width, y2), linePaint);
+
+    // 未加载音频 (peaks 为空) 时，在中间黄色区域绘制「A B 复 读 区 域」撑满高度的水印文字
+    if (peaks.isEmpty) {
+      final zoneHeight = y2 - y1;
+      // 字体撑开整个黄色高度（留少许上下边距 padding 约 4px）
+      final fontSize = max(10.0, zoneHeight - 8.0);
+      const watermarkText = 'A B  复 读 区 域';
+      final textStyle = TextStyle(
+        color: const Color(0xFFF4D03F).withValues(alpha: 0.16),
+        fontSize: fontSize,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 8.0,
+      );
+      final tp = TextPainter(
+        text: TextSpan(text: watermarkText, style: textStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      // 水平居中、垂直居中于中间黄色区域
+      final textX = (size.width - tp.width) / 2;
+      final textY = y1 + (zoneHeight - tp.height) / 2;
+      tp.paint(canvas, Offset(textX, textY));
+    }
   }
 
   /// 每句字幕直接画在波形上、其时间区间内，从标尺下沿向下多行排布；

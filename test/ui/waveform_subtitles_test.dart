@@ -39,4 +39,21 @@ void main() {
         );
     expect(make(const []).shouldRepaint(make(const [SubtitleSentence(Duration.zero, Duration(seconds: 1), 'a')])), isTrue);
   });
+
+  testWidgets('AudacityWaveformPainter 正常绘制中间 1/2 选区提示区域与分界线', (tester) async {
+    final painter = AudacityWaveformPainter(
+      peaks: List.generate(200, (i) => 0.5),
+      peaksPerSecond: 100,
+      totalDuration: const Duration(seconds: 10),
+      currentPosition: const Duration(seconds: 1),
+      repeatState: const RepeatState(),
+      scrollOffset: 0,
+      pixelsPerSecond: 50,
+    );
+    await tester.pumpWidget(Directionality(
+      textDirection: TextDirection.ltr,
+      child: SizedBox(width: 600, height: 200, child: CustomPaint(painter: painter)),
+    ));
+    expect(tester.takeException(), isNull);
+  });
 }

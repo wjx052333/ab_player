@@ -53,6 +53,9 @@ class AudacityWaveformPainter extends CustomPainter {
     // 2. 绘制时间刻度标尺 (带视口裁剪)
     _drawRuler(canvas, size, rulerHeight);
 
+    // 2b. 绘制中间 1/2 A-B 划选区域视觉引导蒙层与分界线
+    _drawSelectionZoneHint(canvas, size, rulerHeight);
+
     // 3a. 说话区间底色 (没有底色的暗区即句间停顿)
     _drawSegments(canvas, size, rulerHeight);
 
@@ -67,6 +70,28 @@ class AudacityWaveformPainter extends CustomPainter {
 
     // 5. 绘制当前播放指针
     _drawPlayhead(canvas, size, rulerHeight);
+  }
+
+  /// 绘制中间 1/2 A-B 划选区域视觉引导蒙层与分界线
+  void _drawSelectionZoneHint(Canvas canvas, Size size, double rulerHeight) {
+    final waveformHeight = size.height - rulerHeight;
+    if (waveformHeight <= 0) return;
+
+    final y1 = rulerHeight + waveformHeight * 0.25;
+    final y2 = rulerHeight + waveformHeight * 0.75;
+
+    // 绘制中间 1/2 区域半透明黄色提示蒙层
+    final zonePaint = Paint()
+      ..color = const Color(0xFFF4D03F).withValues(alpha: 0.07)
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(Rect.fromLTRB(0, y1, size.width, y2), zonePaint);
+
+    // 绘制上下分界辅助线 (1px)
+    final linePaint = Paint()
+      ..color = const Color(0xFFF4D03F).withValues(alpha: 0.25)
+      ..strokeWidth = 1.0;
+    canvas.drawLine(Offset(0, y1), Offset(size.width, y1), linePaint);
+    canvas.drawLine(Offset(0, y2), Offset(size.width, y2), linePaint);
   }
 
   /// 每句字幕直接画在波形上、其时间区间内，从标尺下沿向下多行排布；
